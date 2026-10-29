@@ -9,9 +9,31 @@ import streamlit as st
 API = "https://generativelanguage.googleapis.com/v1beta"
 
 
+KEY_NAMES = {"gemini_api_key", "google_api_key", "gemini_key", "aistudio_api_key"}
+
+
 def api_key():
+    """Find the key anywhere in secrets, like Bookshelf Scanner does.
+
+    In TOML, a line written below a [section] header belongs to that section,
+    so the key may sit inside [gsheets] or [gcp_service_account].
+    """
+    def walk(node):
+        try:
+            items = node.items()
+        except Exception:
+            return None
+        for k, v in items:
+            if str(k).lower() in KEY_NAMES and isinstance(v, str) and v.strip():
+                return v.strip().strip("\"'")
+        for _, v in items:
+            found = walk(v)
+            if found:
+                return found
+        return None
+
     try:
-        return str(st.secrets["GEMINI_API_KEY"]).strip().strip("\"'")
+        return walk(st.secrets)
     except Exception:
         return None
 

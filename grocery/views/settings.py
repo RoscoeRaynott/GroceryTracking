@@ -80,6 +80,8 @@ def _gemini_status():
     key = gemini.api_key()
     if not key:
         st.error("Missing GEMINI_API_KEY in Streamlit secrets.")
+        st.write("Secret names found (values hidden):")
+        st.code(", ".join(_secret_names(st.secrets)) or "none", language=None)
         return []
     try:
         models = gemini.list_models(key)
@@ -88,6 +90,21 @@ def _gemini_status():
         return []
     st.success(f"Key works. {len(models)} models available.")
     return models
+
+
+def _secret_names(node, prefix=""):
+    names = []
+    try:
+        for k, v in node.items():
+            path = f"{prefix}{k}"
+            if hasattr(v, "items"):
+                names.append(f"[{path}]")
+                names.extend(_secret_names(v, f"{path}."))
+            else:
+                names.append(path)
+    except Exception:
+        pass
+    return names
 
 
 def _default_model_index(models):
