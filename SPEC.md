@@ -89,10 +89,19 @@ _Status: gathering requirements. No code until the plan is approved._
 - With no receipt or scan, the user can say: "6 avocados from Costco, the 2-gallon milk set from Costco, one big salmon fillet from Costco."
 - The app matches each item to **past purchases** at that store, copies the product details and last price, and shows them to confirm or edit.
 
-## Barcode scanning
+### Ingredient counting method (decided)
 
-- Option A: **photo of the barcode** (`st.camera_input` → decode with a barcode library). Simple, a few seconds per item.
-- Option B: **live scanning** via a custom browser-camera component. Doable but more work and more fragile on phones.
+- Count **servings**, not grams of an ingredient, because labels don't give ingredient amounts.
+- Example: a 16-serving sausage pack containing HFCS, finished → **16 servings of HFCS**. Plus 4 Cokes with HFCS → **20 HFCS servings** that month.
+- Servings eaten = total servings in package − wasted portion.
+- Nutrition facts (sugar g, sodium mg, …) can be summed the same way, per serving × servings eaten.
+- The app **remembers** each product's ingredients and only asks for a label photo the first time a product is unknown.
+- Chart design and which flags to highlight: **discuss later**. The user will choose filters.
+
+## Barcode scanning (decided)
+
+- **v1: photo of the barcode** (`st.camera_input` → decode with a barcode library).
+- **Future: live scanning** (beeps when it finds a barcode). The user has a Pixel phone. Photo upload was painful in Bookshelf Scanner, so camera integration needs care.
 
 ## Users (decided: single user for now)
 
