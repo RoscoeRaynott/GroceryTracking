@@ -223,6 +223,13 @@ _Status: gathering requirements. No code until the plan is approved._
 - It must say "**Not enough data yet**" until it can actually tell the options apart (threshold pending).
 - **Tap the verdict → explanation**: price per unit eaten at each store, how much was wasted, and why the winner won. The "real cost per eaten unit" math lives here, not on the main screen.
 
+- **Enough data** = at least **2 finished batches from each of at least 2 options**.
+- **Compared options = store + brand + pack size** (e.g. "Kirkland 6-pack at Costco" vs "loose at Walmart").
+
+### Google Sheet (decided)
+
+- A **new, separate Sheet**, using the same service-account approach as Bookshelf Scanner.
+
 ### Warnings (decided)
 
 - **At least 3 finished batches** of an item before lifespan warnings start.
