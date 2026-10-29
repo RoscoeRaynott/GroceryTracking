@@ -217,6 +217,24 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - The user never eats from old and new batches at the same time. Starting a new batch means the old one is finished, and the user will say so.
 
+### "Best place to buy" (decided)
+
+- For each item, the app shows a plain-language verdict: "**Avocado → Costco is best**", "**Mutton → [brand] at [store] is best**".
+- It must say "**Not enough data yet**" until it can actually tell the options apart (threshold pending).
+- **Tap the verdict → explanation**: price per unit eaten at each store, how much was wasted, and why the winner won. The "real cost per eaten unit" math lives here, not on the main screen.
+
+### Warnings (decided)
+
+- **At least 3 finished batches** of an item before lifespan warnings start.
+
+### Same item on one receipt (decided)
+
+- 3 gallons of milk on one receipt = **one batch of 3 gallons**. All math is per standard unit (per gallon).
+
+### Expiry dates (input, decided)
+
+- Captured **by voice** ("the milk expires Nov 2") or read from a label photo. **No manual expiry field is needed.** Item cards stay editable in case of a mistake.
+
 ### Detergents (decided)
 
 - **Pods and liquid are separate items** (e.g. "Laundry detergent – pods", "Laundry detergent – liquid").
