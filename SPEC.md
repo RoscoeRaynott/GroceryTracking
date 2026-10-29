@@ -60,6 +60,39 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - Data is stored in a **Google Sheet**, so the user can read and fix it directly.
 - The user has done this before in their **Bookshelf Scanner** repo (Sheets access via credentials in Streamlit secrets).
+- **Reuse the Bookshelf Scanner pattern exactly:**
+  - Libraries: `gspread` + `google-auth`, using a service account.
+  - Secrets: `[gcp_service_account]` (the service account JSON), `[gsheets] spreadsheet_url`, and `GEMINI_API_KEY`.
+  - Gemini is called directly over its REST API (`generativelanguage.googleapis.com`, `x-goog-api-key` header) with JSON output.
+
+## Two levels of "item" (needed for ingredients)
+
+- **Generic item**: Avocado, Sausage, Milk. Used for lifespan, cost/week, and waste.
+- **Specific product**: "Kirkland Italian Chicken Sausage" (barcode, brand). Used for ingredients and nutrition.
+- Each specific product belongs to one generic item. Fresh produce usually has no specific product.
+
+## Ingredient & nutrition tracking (new, under discussion)
+
+- For each specific product, store **ingredients, nutrition facts, additives/flags** (e.g. HFCS, artificial colors, palm oil).
+- Sources, in order:
+  1. **Open Food Facts** by barcode. It's free and includes ingredients, nutrition, additives, and a palm-oil flag, but coverage varies.
+  2. **Photo of the ingredient/nutrition label → Gemini extracts it.** Reliable fallback.
+- A receipt alone doesn't give ingredients. Each receipt line must be matched to a known product, or the label must be photographed once.
+- Goal: **charts over time** of how much of each ingredient/flag the user consumed, e.g. per month.
+- Limits to be honest about:
+  - Labels list ingredients but rarely their **amounts**.
+  - Nutrition facts **do** give amounts (sugar, sodium, etc.).
+  - GMO status is only known if the package says so (e.g. "Non-GMO", "bioengineered").
+
+## Quick add by voice (decided)
+
+- With no receipt or scan, the user can say: "6 avocados from Costco, the 2-gallon milk set from Costco, one big salmon fillet from Costco."
+- The app matches each item to **past purchases** at that store, copies the product details and last price, and shows them to confirm or edit.
+
+## Barcode scanning
+
+- Option A: **photo of the barcode** (`st.camera_input` → decode with a barcode library). Simple, a few seconds per item.
+- Option B: **live scanning** via a custom browser-camera component. Doable but more work and more fragile on phones.
 
 ## Users (decided: single user for now)
 
