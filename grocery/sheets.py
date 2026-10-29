@@ -10,6 +10,7 @@ from grocery.schema import DEFAULT_SETTINGS, TABS
 
 try:
     import gspread
+    from gspread.utils import rowcol_to_a1
     from google.oauth2.service_account import Credentials
     GSHEETS_AVAILABLE = True
 except ImportError:
@@ -21,6 +22,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+
+# Header row of each tab as it actually is in the Sheet (may have extra columns).
+_HEADERS = {}
 
 
 def _service_account():
@@ -77,13 +81,43 @@ def _ensure_tabs(sh):
         if ws is None:
             ws = sh.add_worksheet(title=title, rows=1000, cols=len(headers))
             ws.update([headers], "A1")
-        elif not ws.row_values(1):
-            ws.update([headers], "A1")
+            _HEADERS[title] = list(headers)
+            current = list(headers)
+        else:
+            values = ws.get_all_values()
+            current = values[0] if values else []
+            if current != headers:
+                if len(values) <= 1:
+                    # No data yet: replace the header row outright.
+                    _resize(ws, len(headers))
+                    ws.batch_clear(["1:1"])
+                    ws.update([headers], "A1")
+                    current = list(headers)
+                else:
+                    # Data exists: never move columns, only add missing ones at the end.
+                    missing = [h for h in headers if h not in current]
+                    if missing:
+                        _resize(ws, len(current) + len(missing))
+                        ws.update([missing], rowcol_to_a1(1, len(current) + 1))
+                        current = current + missing
+        _HEADERS[title] = current
         if title == "settings":
             have = {row[0] for row in ws.get_all_values()[1:] if row}
-            missing = [[k, v] for k, v in DEFAULT_SETTINGS.items() if k not in have]
-            if missing:
-                ws.append_rows(missing, value_input_option="RAW")
+            missing_rows = [[k, v] for k, v in DEFAULT_SETTINGS.items() if k not in have]
+            if missing_rows:
+                ws.append_rows(missing_rows, value_input_option="RAW")
+
+
+def _resize(ws, cols):
+    if ws.col_count < cols:
+        ws.resize(cols=cols)
+
+
+def _sheet():
+    sh, err = connect()
+    if err:
+        raise RuntimeError(err)
+    return sh
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -99,34 +133,73 @@ def append_rows(title, rows):
     """Append rows (dicts keyed by header) in one call, then refresh reads."""
     if not rows:
         return
-    sh, err = connect()
-    if err:
-        raise RuntimeError(err)
-    headers = TABS[title]
-    values = [[str(r.get(h, "")) for h in headers] for r in rows]
-    sh.worksheet(title).append_rows(values, value_input_option="RAW")
+    ws = _sheet().worksheet(title)
+    headers = _HEADERS.get(title) or TABS[title]
+    values = [[_cell(r.get(h, "")) for h in headers] for r in rows]
+    ws.append_rows(values, value_input_option="RAW")
     read_tab.clear()
+
+
+def update_rows(title, id_col, changes):
+    """changes = {row id: {column: value}}; writes all cells in one batch."""
+    if not changes:
+        return
+    ws = _sheet().worksheet(title)
+    values = ws.get_all_values()
+    headers = values[0]
+    id_index = headers.index(id_col)
+    updates = []
+    for r, row in enumerate(values[1:], start=2):
+        row_id = row[id_index] if id_index < len(row) else ""
+        for col, value in changes.get(row_id, {}).items():
+            updates.append({"range": rowcol_to_a1(r, headers.index(col) + 1), "values": [[_cell(value)]]})
+    if updates:
+        ws.batch_update(updates, value_input_option="RAW")
+    read_tab.clear()
+
+
+def delete_rows_where(title, **match):
+    """Delete every row whose columns equal all the given values."""
+    ws = _sheet().worksheet(title)
+    values = ws.get_all_values()
+    if not values:
+        return
+    cols = {values[0].index(c): str(v) for c, v in match.items()}
+    doomed = [
+        r for r, row in enumerate(values[1:], start=2)
+        if all(i < len(row) and row[i] == v for i, v in cols.items())
+    ]
+    for r in reversed(doomed):
+        ws.delete_rows(r)
+    read_tab.clear()
+
+
+def _cell(value):
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+    return str(value)
 
 
 def get_settings():
     values = dict(DEFAULT_SETTINGS)
-    values.update({r["key"]: r["value"] for r in read_tab("settings") if r.get("key")})
+    values.update({r["key"]: r["value"] for r in read_tab("settings") if r.get("key") and r.get("value") != ""})
     return values
 
 
 def save_settings(changes):
     """Write changed settings back to their rows in one batch."""
-    sh, err = connect()
-    if err:
-        raise RuntimeError(err)
-    ws = sh.worksheet("settings")
+    ws = _sheet().worksheet("settings")
     keys = [row[0] if row else "" for row in ws.get_all_values()]
     updates, new_rows = [], []
     for key, value in changes.items():
         if key in keys:
-            updates.append({"range": f"B{keys.index(key) + 1}", "values": [[str(value)]]})
+            updates.append({"range": f"B{keys.index(key) + 1}", "values": [[_cell(value)]]})
         else:
-            new_rows.append([key, str(value)])
+            new_rows.append([key, _cell(value)])
     if updates:
         ws.batch_update(updates, value_input_option="RAW")
     if new_rows:

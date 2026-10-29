@@ -293,6 +293,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - Each photo's AI reading is saved as a **draft** in the Sheet, so a full reload can resume.
   - **Drafts are deleted once the receipt is saved or discarded.**
 - **The Sheet must stay clean and human-readable**: no leftover rough work in the main tabs.
+  - Raw AI readings go in their own **ai_readings** tab, not in purchases.
+  - Rows that link by ID also show **plain names** (item, store, date) next to the IDs.
+- **Non-product lines** (bag fees, memberships, gift cards, deposits) are skipped automatically and listed as "Skipped" at the bottom of Review, with "Add back".
+- **New items**: the AI suggests name, kind, unit, storage, and perishable. The card is marked **New** with those fields open. Later purchases match automatically.
 
 ## Safeguards (decided)
 
