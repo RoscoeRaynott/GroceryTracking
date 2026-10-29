@@ -199,11 +199,28 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - **No warnings**, but lifespan **is tracked** (detergent, trash bags, dish soap) to compare small vs large packs.
 
-### Which history counts (open)
+### Which history counts (decided direction)
 
-- Frequent perishables (salmon, eggs, nuggets) should reflect recent habits.
-- Long-lasting items (detergent, 6–8+ months each) need all their history.
-- Proposal: use the **last N finished batches** instead of a time window. Pending user decision.
+- Some items vary a lot. Salmon can be eaten in 1 week, or sit 2 weeks in the freezer and take 2 more. The user accepts that **high variation is normal**.
+- Use a **running average of the last 5–10 batches**, not a time window. Exact N is tunable later.
+- **Warnings only start after enough finished batches** for that item (minimum count pending).
+
+### Per-item lifespan chart (decided, on-demand tab)
+
+- For each item, a **bar chart, one bar per batch, in purchase order**. There's no calendar axis, because lifespan variation is the point.
+  - Bar height = days the batch lasted.
+  - The **wasted portion is shaded** (e.g. ⅔ of the bar shaded if ⅔ was wasted).
+  - Optional overlay: a running-average line (last 5–10 batches).
+- More statistics: future work.
+
+### Overlapping batches (decided: non-issue)
+
+- The user never eats from old and new batches at the same time. Starting a new batch means the old one is finished, and the user will say so.
+
+### Detergents (decided)
+
+- **Pods and liquid are separate items** (e.g. "Laundry detergent – pods", "Laundry detergent – liquid").
+- Common comparison metric: **loads**. Both pod packs and liquid bottles state "X loads" on US labels. This gives **cost per load** and **days per load** across both. It's the manufacturer's claim, so actual use may differ.
 
 ### Expiry dates
 
