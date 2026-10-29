@@ -1,7 +1,7 @@
 import streamlit as st
 
 from grocery import gemini, sheets
-from grocery.schema import TABS
+from grocery.schema import DEFAULT_SETTINGS, TABS
 from grocery.views.common import back_home
 
 MODEL_TASKS = {
@@ -10,53 +10,50 @@ MODEL_TASKS = {
     "model_labels": "Reading labels",
 }
 
+# (key, label, kind, min, step)
+NUMBERS = [
+    ("min_batches_before_warning", "Finished batches before warnings start", int, 1, 1),
+    ("warning_multiplier", "Warn when open longer than × usual lifespan", float, 1.0, 0.05),
+    ("running_average_batches", "Usual lifespan uses the last … batches", int, 1, 1),
+    ("expiry_warning_days", "Expiry warning, days before", int, 0, 1),
+    ("best_buy_min_batches", "Best place to buy needs … finished batches per option", int, 1, 1),
+]
+
 
 def render():
     back_home()
     st.title("Settings")
+    st.caption("Changes save to your Google Sheet as soon as you make them.")
 
-    sh, err = _sheet_status()
+    _, err = _sheet_status()
     models = _gemini_status()
-
     if err:
         return
     current = sheets.get_settings()
 
-    with st.form("settings_form", border=True):
+    with st.container(border=True):
         st.subheader("AI model per task")
-        chosen = {}
         for key, label in MODEL_TASKS.items():
+            saved = current.get(key) or DEFAULT_SETTINGS[key]
             if models:
-                saved = current.get(key, "")
-                index = models.index(saved) if saved in models else _default_model_index(models)
-                chosen[key] = st.selectbox(label, models, index=index)
+                options = models if saved in models else [saved] + models
+                st.selectbox(label, options, index=options.index(saved), key=f"set_{key}",
+                             on_change=_save, args=(key,))
             else:
-                chosen[key] = st.text_input(label, value=current.get(key, ""))
+                st.text_input(label, value=saved, key=f"set_{key}", on_change=_save, args=(key,))
 
+    with st.container(border=True):
         st.subheader("Formula numbers")
-        chosen["min_batches_before_warning"] = st.number_input(
-            "Finished batches before warnings start", min_value=1, step=1,
-            value=int(float(current["min_batches_before_warning"])))
-        chosen["warning_multiplier"] = st.number_input(
-            "Warn when open longer than × usual lifespan", min_value=1.0, step=0.05,
-            value=float(current["warning_multiplier"]))
-        chosen["running_average_batches"] = st.number_input(
-            "Usual lifespan uses the last … batches", min_value=1, step=1,
-            value=int(float(current["running_average_batches"])))
-        chosen["expiry_warning_days"] = st.number_input(
-            "Expiry warning, days before", min_value=0, step=1,
-            value=int(float(current["expiry_warning_days"])))
-        chosen["best_buy_min_batches"] = st.number_input(
-            "Best place to buy needs … finished batches per option", min_value=1, step=1,
-            value=int(float(current["best_buy_min_batches"])))
+        for key, label, kind, low, step in NUMBERS:
+            st.number_input(label, min_value=kind(low), step=kind(step),
+                            value=kind(float(current[key])), key=f"set_{key}",
+                            on_change=_save, args=(key,))
 
-        if st.form_submit_button("Save settings", type="primary", width="stretch"):
-            changed = {k: v for k, v in chosen.items() if str(v) != str(current.get(k, ""))}
-            if changed:
-                sheets.save_settings(changed)
-                st.success(f"Saved {len(changed)} setting(s).")
-            else:
-                st.info("Nothing changed.")
+
+def _save(key):
+    value = st.session_state[f"set_{key}"]
+    sheets.save_settings({key: value})
+    st.toast(f"Saved: {value}")
 
 
 def _sheet_status():
@@ -105,11 +102,3 @@ def _secret_names(node, prefix=""):
     except Exception:
         pass
     return names
-
-
-def _default_model_index(models):
-    # Until a model is saved, suggest the first "flash" model in the list.
-    for i, m in enumerate(models):
-        if "flash" in m:
-            return i
-    return 0

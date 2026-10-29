@@ -39,7 +39,7 @@ DEFAULT_SETTINGS = {
     "running_average_batches": "5",
     "expiry_warning_days": "2",
     "best_buy_min_batches": "2",
-    "model_receipts": "",
-    "model_voice": "",
-    "model_labels": "",
+    "model_receipts": "gemini-3.8-flash",
+    "model_voice": "gemini-3.8-flash",
+    "model_labels": "gemini-3.5-flash-lite",
 }
