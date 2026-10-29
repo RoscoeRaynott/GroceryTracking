@@ -46,6 +46,14 @@ _Status: gathering requirements. No code until the plan is approved._
 3. **Alexa, possible.** Custom skills with an HTTPS backend appear to still work. Same backend requirement as option 2.
 
 - Platform assumption: **Streamlit app**, from the connected GitHub repo.
+- **Decided:** build option 1 (in-app voice) first. Hey Google and Alexa are **future work**.
+
+## AI provider (decided: Gemini)
+
+- **Gemini API** with a key stored as a Streamlit secret.
+- Gemini accepts **images** (receipt photos) and **audio** (voice notes) directly, so one provider covers both.
+- The key comes from **Google AI Studio**, which is separate from Antigravity and Google consumer subscriptions.
+- A Claude Pro chat subscription **doesn't include API access**. Claude's API is billed separately.
 
 ## Feasibility notes (agreed facts)
 
