@@ -266,6 +266,19 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - The AI classifies each item as perishable or not, and the user can override it.
 
+## Safeguards (decided)
+
+- **No password gate** for now. The app isn't shared with anyone.
+- **Item matching**: the AI always matches against the existing item list ("an avocado is an avocado"). A merge tool is available for mistakes.
+- **Duplicate receipt warning**: same store + date + total as an earlier receipt.
+- **Timezone: America/Chicago (Houston)** for all dates.
+- **Model fallback**: model names in Settings, plus a backup model if a call fails.
+- **Raw AI reading stored** for every receipt/screenshot/voice note, so mistakes can be traced.
+- **Label photo = ground truth.** It overrides Open Food Facts. US labels give per-serving nutrition and servings per container.
+- **No separate backup feature.** Google Sheets version history covers accidental bad writes.
+- **"Still have these?"** check-ins are folded into the **dashboard**, not a separate feature.
+- **Unusual receipt lines**: returns and refunds (negative), coupons on their own line, priced-by-weight items.
+
 ## Barcode scanning (decided)
 
 - **v1: photo of the barcode** (`st.camera_input` → decode with a barcode library).
