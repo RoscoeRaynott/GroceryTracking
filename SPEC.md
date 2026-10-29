@@ -287,7 +287,12 @@ _Status: gathering requirements. No code until the plan is approved._
   - The photo queue is kept in session.
   - Known Bookshelf problems: HEIC silently failing, huge files dropping the connection, and Android reloading the page when switching to the gallery/camera.
 - **"Is your last X finished?" → Yes**: the finish date **defaults to today**, editable on the card. A date said later by voice ("finished 3 days ago") overrides it.
-- **Receipt photos are not stored anywhere.** Only the AI's text reading is saved (`purchases.raw_ai`).
+- **Receipt photos are not stored anywhere.** Only the AI's text reading is saved.
+- **Refresh protection: both.**
+  - Photos are kept in session memory the moment they arrive (Bookshelf approach).
+  - Each photo's AI reading is saved as a **draft** in the Sheet, so a full reload can resume.
+  - **Drafts are deleted once the receipt is saved or discarded.**
+- **The Sheet must stay clean and human-readable**: no leftover rough work in the main tabs.
 
 ## Safeguards (decided)
 
