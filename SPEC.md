@@ -266,6 +266,13 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - The AI classifies each item as perishable or not, and the user can override it.
 
+## Interface (decided)
+
+- **Home screen with 4 big buttons**: Add purchase, Voice update, Pantry, Insights. Settings is a small link. Reminders show at the top of Home.
+- No tab row and no sidebar. Each screen has "← Home".
+- **Theme follows the phone** (light/dark).
+- A **clickable mockup** is built and approved before real UI code.
+
 ## Safeguards (decided)
 
 - **No password gate** for now. The app isn't shared with anyone.
