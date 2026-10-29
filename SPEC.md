@@ -54,6 +54,24 @@ _Status: gathering requirements. No code until the plan is approved._
 - Gemini accepts **images** (receipt photos) and **audio** (voice notes) directly, so one provider covers both.
 - The key comes from **Google AI Studio**, which is separate from Antigravity and Google consumer subscriptions.
 - A Claude Pro chat subscription **doesn't include API access**. Claude's API is billed separately.
+- The user can also create Claude API keys (platform.claude.com, pay-per-use) if ever needed.
+
+## Storage (decided: Google Sheets)
+
+- Data is stored in a **Google Sheet**, so the user can read and fix it directly.
+- The user has done this before in their **Bookshelf Scanner** repo (Sheets access via credentials in Streamlit secrets).
+
+## Users (decided: single user for now)
+
+- **One user, no login** for version 1.
+- Future: multiple people (friends), each with their own login and their own sheet. Out of scope until v1 works.
+
+## Batch lifecycle (decided)
+
+- Every purchase creates a **batch** (e.g. "Avocado ×6, Costco, Oct 29, $6.50"), which stays **open** until explicitly closed.
+- The user closes batches by **voice**: "butter is finished", "eggs finished today", "2 avocados rotted".
+- Restocking doesn't close the old batch automatically. When the user **adds a purchase of an item that has an open batch, the app asks "Is your last batch of X finished?"** and the user answers yes or no.
+- **Lifespan = purchase date → finished date**, not purchase → next purchase. The user often waits days before rebuying, and that gap shouldn't count.
 
 ## Feasibility notes (agreed facts)
 
