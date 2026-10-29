@@ -151,6 +151,30 @@ _Status: gathering requirements. No code until the plan is approved._
 - On opening the app: what's in the **freezer, fridge, and pantry**, as a visual list, ideally with **small pictures** (onions, potatoes, sweet potatoes…) as a reminder to eat them.
 - **"You probably forgot this" alerts**: if an open batch is much older than that item's usual lifespan (e.g. avocados usually last 2 weeks and it's been 4), remind the user something may be left at the back of the fridge.
 
+## More decisions (round 8)
+
+- **Storage place per item**: a dropdown with **Open air (pantry)**, **Fridge**, **Freezer**. The AI guesses the first time, the user confirms or changes it, and the app remembers.
+- **Pictures**: real product photo if available, else food emoji. Final picture approach decided later.
+- **Dashboard**: a must-have but **not a priority now**. Build it after the core works.
+- **Forgot-it reminders**: for perishables, warn at about **1.25× the usual lifespan** (2 weeks → 2.5 weeks). **Non-perishables** (rice, detergent) never trigger reminders, however long they sit.
+- **Voice preview**: before saving, show a small list of exactly what the voice step will do ("Close avocados batch from Oct 12", "Milk: 1/3 spoiled", "Butter: finished"). The user approves.
+- **No old-receipt import**. Start fresh. A usual lifespan only exists after an item's first batch is finished. The app gets smarter over months and years.
+- **Gemini paid Tier 1** key is available. No need to design around free-tier limits.
+- **Stores = chain only**: Costco, Walmart, Safeway, Kroger, … plus "local grocery store". No branch locations.
+
+### Why Gemini and not Claude (for the record)
+
+- Gemini's API accepts **audio** directly. Claude's API takes text, images, and PDFs but **not audio**, so voice would need an extra speech-to-text service.
+- The user already has a **paid Gemini key** and working Gemini code in Bookshelf Scanner.
+- Claude reads receipt images well too, and could be added later as an alternative receipt reader if Gemini struggles.
+
+### "Usual lifespan" definition (proposed, awaiting approval)
+
+- Each closed batch records **days open** and **fraction eaten vs wasted**.
+- **Usual lifespan = median days open of past batches where at least half was eaten.**
+- Batches that **mostly spoiled** (e.g. the forgotten milk, 100% spoiled after 3 weeks) are **left out** of the usual lifespan and counted as **waste** instead (money lost, "spoils after ~3 weeks" knowledge).
+- Median (not average) so one odd batch (the 5-month rice bag) doesn't skew it.
+
 ## Barcode scanning (decided)
 
 - **v1: photo of the barcode** (`st.camera_input` → decode with a barcode library).
