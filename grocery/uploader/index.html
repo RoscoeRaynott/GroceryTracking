@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Adapted from Bookshelf Scanner's client_uploader: photos are shrunk on the
+       phone before upload so big camera files never drop the connection. -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0;
+        font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: transparent; color: #31333F; padding: 4px 2px; overflow: hidden; }
+    .card {
+      border: 2px dashed rgba(128, 128, 128, 0.5); border-radius: 12px; padding: 22px 12px;
+      text-align: center; cursor: pointer; display: flex; flex-direction: column;
+      align-items: center; gap: 4px; user-select: none; -webkit-tap-highlight-color: transparent;
+    }
+    .card:active { background: rgba(31, 122, 77, 0.08); }
+    .big { font-size: 17px; font-weight: 600; }
+    .small { font-size: 13px; opacity: 0.75; }
+    #status { margin-top: 6px; font-size: 14px; font-weight: 600; display: none; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <label class="card" for="file-input">
+    <div class="big">Tap to add receipt photos or screenshots</div>
+    <div class="small">Pick one or several. Long receipt? Add overlapping photos.</div>
+    <div id="status"></div>
+  </label>
+  <input type="file" id="file-input" accept="image/*" multiple>
+
+  <script>
+    const MAX_DIM = 3072;     // long edge in px: keeps small receipt text readable
+    const QUALITY = 0.9;
+    const input = document.getElementById("file-input");
+    const status = document.getElementById("status");
+
+    function send(type, data = {}) {
+      window.parent.postMessage({ isStreamlitMessage: true, type: type, ...data }, "*");
+    }
+    function fitHeight() {
+      const h = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight, 96);
+      send("streamlit:setFrameHeight", { height: h });
+    }
+    function say(text) {
+      status.style.display = text ? "block" : "none";
+      status.textContent = text || "";
+      fitHeight();
+    }
+
+    send("streamlit:componentReady", { apiVersion: 1 });
+    window.addEventListener("load", fitHeight);
+    window.addEventListener("resize", fitHeight);
+    window.addEventListener("message", (event) => {
+      if (event.data && event.data.type === "streamlit:render") {
+        const theme = event.data.theme;
+        if (theme && theme.textColor) document.body.style.color = theme.textColor;
+        fitHeight();
+      }
+    });
+
+    input.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const results = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        say(`Preparing photo ${i + 1} of ${files.length}…`);
+        if (/\.(heic|heif)$/i.test(file.name)) {
+          say("HEIC photo found. Switching to the standard uploader…");
+          send("streamlit:setComponentValue", { value: { need_fallback: true } });
+          return;
+        }
+        try {
+          results.push({ name: file.name, data: await shrink(file) });
+        } catch (err) {
+          say("This phone couldn't prepare that photo. Switching to the standard uploader…");
+          send("streamlit:setComponentValue", { value: { need_fallback: true } });
+          return;
+        }
+      }
+      say(`Sending ${results.length} photo(s)…`);
+      send("streamlit:setComponentValue", {
+        value: { batch_id: Date.now() + "_" + Math.random().toString(36).slice(2, 8), files: results }
+      });
+      input.value = "";
+      setTimeout(() => say(""), 2000);
+    });
+
+    async function shrink(file) {
+      let source;
+      try {
+        source = await createImageBitmap(file, { imageOrientation: "from-image" });
+      } catch (err) {
+        source = await loadImage(file);
+      }
+      let w = source.width || source.naturalWidth;
+      let h = source.height || source.naturalHeight;
+      if (!w || !h) throw new Error("empty image");
+      const scale = Math.min(1, MAX_DIM / Math.max(w, h));
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d").drawImage(source, 0, 0, w, h);
+      if (source.close) source.close();
+      return canvas.toDataURL("image/jpeg", QUALITY);
+    }
+
+    function loadImage(file) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+  </script>
+</body>
+</html>

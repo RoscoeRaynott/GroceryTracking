@@ -2,3 +2,5 @@ streamlit>=1.66
 gspread
 google-auth
 tzdata
+pillow
+pillow-heif
