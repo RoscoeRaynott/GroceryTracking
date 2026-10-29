@@ -273,6 +273,22 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Theme follows the phone** (light/dark).
 - A **clickable mockup** is built and approved before real UI code.
 
+## Models (starting choice; changeable in Settings)
+
+- Receipts: Gemini 3.8 Flash (upgrade: Gemini 4 Argon, which is available on the user's key).
+- Voice: Gemini 3.8 Flash. Labels: Gemini 3.5 Flash Lite.
+- Rate limits are a non-issue at this app's volume (~50 calls/day max). Every call is logged in `ai_log`.
+
+## Phase 1 decisions
+
+- **Photo upload**: reuse Bookshelf Scanner's lessons:
+  - A browser-side uploader that shrinks photos on the phone before sending, with multiple photos at once.
+  - A standard uploader as fallback for HEIC (Pixel "High efficiency" photos), plus `pillow-heif`.
+  - The photo queue is kept in session.
+  - Known Bookshelf problems: HEIC silently failing, huge files dropping the connection, and Android reloading the page when switching to the gallery/camera.
+- **"Is your last X finished?" → Yes**: the finish date **defaults to today**, editable on the card. A date said later by voice ("finished 3 days ago") overrides it.
+- **Receipt photos are not stored anywhere.** Only the AI's text reading is saved (`purchases.raw_ai`).
+
 ## Safeguards (decided)
 
 - **No password gate** for now. The app isn't shared with anyone.
