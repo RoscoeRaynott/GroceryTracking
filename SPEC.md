@@ -133,6 +133,24 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Must be smooth on a phone.** No cramped, side-scrolling tables (a known Streamlit pain point on mobile).
 - Planned approach: **one card per item** (name, qty, price, category, flags), with problem items shown first, big tap targets, and edit in place.
 
+## More decisions (round 7)
+
+- **Backdated events**: "avocados finished 3 days ago" → the end date is today − 3 days. This applies to any voice update.
+- **Alcohol**: store **% ABV** (and volume) per product for beers and seltzers. Can be charted like nutrients.
+- **Repeated identical lines across photos** (e.g. 6 separate water-case lines split across two photos): if the app suspects overlap, it **asks "How many did you buy?"** and the user enters the number.
+- **Single eater**: only the user eats the food. Servings = the user's intake.
+- **No freezing logic**: storage method doesn't change tracking. The user decides how to store things.
+- **Uniform consumption**: assume each batch was consumed evenly from purchase to finish. Never ask how much is left.
+- **Item granularity example**: whole milk ≠ half-and-half ≠ whipping cream. No need for 1%/2% splits.
+- **Waste amounts are rough fractions** ("about a third of the carrots").
+- **Phone-first** (Pixel), still usable on a computer.
+- **Units**: USD, lb, gallons (US).
+
+## Dashboard (home screen; user will detail later)
+
+- On opening the app: what's in the **freezer, fridge, and pantry**, as a visual list, ideally with **small pictures** (onions, potatoes, sweet potatoes…) as a reminder to eat them.
+- **"You probably forgot this" alerts**: if an open batch is much older than that item's usual lifespan (e.g. avocados usually last 2 weeks and it's been 4), remind the user something may be left at the back of the fridge.
+
 ## Barcode scanning (decided)
 
 - **v1: photo of the barcode** (`st.camera_input` → decode with a barcode library).
