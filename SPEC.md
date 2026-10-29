@@ -98,6 +98,41 @@ _Status: gathering requirements. No code until the plan is approved._
 - The app **remembers** each product's ingredients and only asks for a label photo the first time a product is unknown.
 - Chart design and which flags to highlight: **discuss later**. The user will choose filters.
 
+### Splitting across months (decided)
+
+- Servings are split by days. A batch from Jan 1 to Feb 20 (51 days) with 16 servings → January gets 16 × 31/51 ≈ 9.7, February gets 16 × 20/51 ≈ 6.3.
+
+### Two kinds of ingredient data (decided)
+
+- **Flag ingredients** (HFCS, palm oil, artificial/natural colors…): labels give no amount → counted as **servings containing it**.
+- **Measured nutrients** (sodium, potassium, cholesterol, trans fat, total fat, sugar, carbs, protein…): labels give **amount and %DV per serving** → summed as real amounts and **%DV per day / per month**. This is the clearer, primary chart.
+
+## What gets tracked (decided)
+
+- **Everything on the receipt is listed**, not just food. The app classifies each line intelligently:
+  1. **Food**: lifespan + cost + waste + ingredients + nutrition.
+  2. **Consumable non-food** (trash bags, paper towels, detergent, shampoo, hair oil): lifespan + cost + waste. **No ingredients.**
+  3. **One-time / durable** (chair, monitor, keyboard, dustbin): recorded, but **not tracked** for lifespan.
+- The user can change any item's category or turn tracking off.
+- Not expected on receipts: Costco gas.
+
+## Receipt reading (decided)
+
+- **Several photos per receipt** (long Costco receipts). The app **removes items that appear in two overlapping photos**.
+  - Risk: two genuinely identical items in a row could look like overlap → flag these for the user to decide.
+- **Unclear lines are flagged**: "This price/item was unreadable. What was it?"
+- **Price = what was actually paid for the item, after discounts/coupons, excluding tax.** Costco-style discount lines must be applied to the item above them.
+- **Sources:**
+  - **Printed receipt photos**: abbreviated names, prices, discount lines.
+  - **Online order screenshots** (Walmart, Instacart, Costco apps): clear names, quantities, prices.
+- The AI **detects which kind it is** and reads it accordingly.
+
+## Review screen (decided: must be excellent on mobile)
+
+- The user always reviews items and prices before saving.
+- **Must be smooth on a phone.** No cramped, side-scrolling tables (a known Streamlit pain point on mobile).
+- Planned approach: **one card per item** (name, qty, price, category, flags), with problem items shown first, big tap targets, and edit in place.
+
 ## Barcode scanning (decided)
 
 - **v1: photo of the barcode** (`st.camera_input` → decode with a barcode library).
