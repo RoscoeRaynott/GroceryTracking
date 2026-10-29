@@ -168,12 +168,32 @@ _Status: gathering requirements. No code until the plan is approved._
 - The user already has a **paid Gemini key** and working Gemini code in Bookshelf Scanner.
 - Claude reads receipt images well too, and could be added later as an alternative receipt reader if Gemini struggles.
 
-### "Usual lifespan" definition (proposed, awaiting approval)
+### "Usual lifespan" definition (v2 proposal, awaiting approval)
 
-- Each closed batch records **days open** and **fraction eaten vs wasted**.
-- **Usual lifespan = median days open of past batches where at least half was eaten.**
-- Batches that **mostly spoiled** (e.g. the forgotten milk, 100% spoiled after 3 weeks) are **left out** of the usual lifespan and counted as **waste** instead (money lost, "spoils after ~3 weeks" knowledge).
-- Median (not average) so one odd batch (the 5-month rice bag) doesn't skew it.
+- The "at least half eaten" cutoff was **rejected** by the user.
+- New proposal is a **weighted average with no cutoff**. Each batch counts in proportion to how much was actually eaten:
+  - `eaten share = 1 − wasted share`
+  - `usual lifespan = Σ(eaten share × days open) ÷ Σ(eaten share)`
+- A fully spoiled batch (eaten share 0) has **zero influence** and is recorded only as waste. A partly wasted batch counts partly.
+- Only for **perishable** items.
+
+### Expiry dates
+
+- When known (voice "milk expires Nov 2", or read from a label photo), store the **expiry date** per batch.
+- It's a hard upper limit for reminders. Many items (fresh produce) have none.
+
+## Model arenas (future feature)
+
+- The user wants in-app **arenas** to compare Gemini models (quality, tokens, cost, rate limits) per task.
+- The app must let the **model be chosen per task** (receipt reading, voice parsing, label reading), not hard-coded. Same idea as `arena_benchmark.py` in Bookshelf Scanner.
+
+## Stores (updated)
+
+- Chains by name. Local stores **saved by their actual name** (user is in **Houston**; only a few local stores are visited repeatedly).
+
+## Perishable flag (decided)
+
+- The AI classifies each item as perishable or not, and the user can override it.
 
 ## Barcode scanning (decided)
 
