@@ -177,10 +177,39 @@ _Status: gathering requirements. No code until the plan is approved._
 - A fully spoiled batch (eaten share 0) has **zero influence** and is recorded only as waste. A partly wasted batch counts partly.
 - Only for **perishable** items.
 
+- **Accepted as a starting point.** The user may change the formula later (e.g. after 6 months).
+
+### Recompute rule (decided, architectural)
+
+- The Sheet stores only **raw facts**: purchases, batches, waste/finish events, product details.
+- Every derived number (usual lifespan, cost per unit, nutrient totals) is **calculated from raw facts**, never typed in by hand.
+- Changing a formula → **all history is recalculated** automatically.
+
+### Per-unit standardization (decided)
+
+- Each item has a **standard unit**: count (avocado, apple, egg, trash bag), volume (gallon, fl oz), or weight (lb, oz).
+- Pack sizes are converted to that unit: ½-gallon jar = 0.5 gal, 10 apples = 10.
+- Lifespan is tracked **per unit**: 3 avocados lasting 8 days → 8/3 ≈ 2.7 days per avocado.
+- Updated formula (v3, per unit):
+  - `units eaten = units bought × (1 − wasted share)`
+  - `usual days per unit = Σ(eaten share × days) ÷ Σ(units eaten)`
+  - `expected lifespan of a new batch = units bought × usual days per unit`
+
+### Non-perishables (decided)
+
+- **No warnings**, but lifespan **is tracked** (detergent, trash bags, dish soap) to compare small vs large packs.
+
+### Which history counts (open)
+
+- Frequent perishables (salmon, eggs, nuggets) should reflect recent habits.
+- Long-lasting items (detergent, 6–8+ months each) need all their history.
+- Proposal: use the **last N finished batches** instead of a time window. Pending user decision.
+
 ### Expiry dates
 
 - When known (voice "milk expires Nov 2", or read from a label photo), store the **expiry date** per batch.
 - It's a hard upper limit for reminders. Many items (fresh produce) have none.
+- **Warn 2 days before** a known expiry date.
 
 ## Model arenas (future feature)
 
