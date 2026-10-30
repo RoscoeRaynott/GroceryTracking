@@ -480,6 +480,13 @@ def _review_step(state):
                         st.rerun()
 
     st.write("")
+    if not review["store"].strip():
+        guess = records.store_from_brands(c.get("brand", "") + " " + c.get("product", "") for c in cards)
+        st.markdown(":red-badge[Store missing]")
+        picked = st.text_input("Which store?", value=guess, key=f"{k}_store_again",
+                               placeholder="e.g. Costco, Walmart, H-E-B")
+        if picked.strip():
+            review["store"] = picked.strip()
     st.markdown("**Save this to your Google Sheet?**")
     if st.button(f"Save {len(cards)} items", type="primary", width="stretch", disabled=not cards):
         _save(state)
@@ -634,7 +641,7 @@ def _save(state):
     review = state["review"]
     problems = []
     if not review["store"].strip():
-        problems.append("Enter the store.")
+        problems.append("Which store was it? Type it in the box just above Save.")
     for c in review["items"]:
         if not c["item"].strip():
             problems.append("Every item needs a name.")

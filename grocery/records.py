@@ -417,3 +417,21 @@ def _float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+STORE_BRANDS = {  # store brands that tell us where something was bought
+    "kirkland": "Costco", "great value": "Walmart", "equate": "Walmart", "marketside": "Walmart",
+    "signature select": "Safeway", "o organics": "Safeway", "h-e-b": "H-E-B", "heb": "H-E-B",
+    "hill country fare": "H-E-B", "trader joe": "Trader Joe's", "365 by whole foods": "Whole Foods",
+    "member's mark": "Sam's Club", "good & gather": "Target", "simple truth": "Kroger",
+}
+
+
+def store_from_brands(texts):
+    """'Kirkland …' means Costco, 'Great Value …' means Walmart, and so on; "" if no clue."""
+    for text in texts:
+        low = str(text).lower()
+        for brand, store in STORE_BRANDS.items():
+            if brand in low:
+                return store
+    return ""

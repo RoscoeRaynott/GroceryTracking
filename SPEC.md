@@ -380,6 +380,7 @@ _Status: gathering requirements. No code until the plan is approved._
   - An unknown one gets an empty card, filled by voice or text.
   - Scanning the same barcode again adds another pack.
   - The "Missed something?" mic and Save/Discard are on the same screen.
+- **Missing store**: a red "Store missing" box appears right above Save, pre-filled from store brands (Kirkland → Costco, Great Value → Walmart, Signature Select → Safeway, Member's Mark → Sam's Club, …). The voice fix sets the store from a store brand too.
 - Gallery pickers stay available under "Or pick … from your gallery".
 
 ## Design principle: visual first (user rule, applies everywhere)
