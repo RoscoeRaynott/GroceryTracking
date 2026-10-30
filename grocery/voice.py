@@ -158,7 +158,8 @@ KNOWN PRODUCTS with the user's own nicknames (ref | item | product | nicknames).
 nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
 {products}
 
-Apply only what the user says. Examples: "it's from Costco" changes the store; "I bought it 3 days ago"
+Apply only what the user says; anything about an item can change, not just price and weight.
+Examples: "I keep raspberries in the freezer" sets that item's storage to Freezer; "it's from Costco" changes the store; "I bought it 3 days ago"
 changes the date; "the salmon was 2.4 pounds, 24 dollars" updates that item; "also a dozen eggs" adds an
 item; "remove the bananas" removes one. Product names should carry every detail they give (brand, cut,
 size). Leave anything they don't mention unchanged.
@@ -167,8 +168,10 @@ Return only JSON:
 {{
   "transcript": what the user said, word for word,
   "store": new store or null, "date": new date "YYYY-MM-DD" or null,
-  "updates": [{{"index": item index, "item": new or null, "product": new or null, "units": new or null,
-               "unit": one of {units} or null, "price": new dollars or null}}],
+  "updates": [{{"index": item index, and ONLY the fields the user changed, any of:
+               "item", "product", "brand", "units" (number), "unit" (one of {units}),
+               "price" (dollars), "kind" (one of {kinds}), "storage" (one of {storage}),
+               "perishable" (true/false), "expiry_date" ("YYYY-MM-DD")}}],
   "adds": [{{"item": generic item name, "product": full product description, "units": number,
             "unit": one of {units}, "price": dollars or null, "based_on": purchase ref or null,
             "product_ref": known product ref or null, "said_name": the user's exact words for it,
