@@ -68,9 +68,13 @@ visible; use null for anything you cannot read. Return only JSON:
 {INFO_SHAPE}"""
 
 SEARCH_PROMPT = """Find the official ingredients list and Nutrition Facts for this exact US grocery
-product: brand "{brand}", product "{name}"{store}. Use Google Search and prefer the maker's or the
-retailer's own product page. It must be this exact brand and product (same flavor and variety);
-if you cannot find it, set "found" to false. Never fill in values from a different product.
+product. Everything the user told us about it:
+  {query}
+Use Google Search with ALL of these details (store, pack size, cut, variety), not a generic search.
+Prefer the store's own product page (e.g. costco.com / costcobusinessdelivery.com, walmart.com) or
+the maker's page. It must be this exact product; if you cannot find it, set "found" to false.
+Never fill in values from a different product. Raw single-ingredient meat, fish and produce often
+have no ingredients list or Nutrition Facts; then set "found" to false.
 Return only JSON, no other text:
 {shape}"""
 
@@ -158,12 +162,12 @@ def _from_off(p, url):
 
 # ---------------------------------------------------------------- Gemini
 
-def web_lookup(model, brand, name, store=""):
-    prompt = SEARCH_PROMPT.format(brand=brand, name=name, shape=INFO_SHAPE,
-                                  store=f", sold at {store}" if store else "")
+def web_lookup(model, query):
+    """query = everything known about the product (brand, name, size, store, what was said)."""
+    prompt = SEARCH_PROMPT.format(query=query, shape=INFO_SHAPE)
     result, sources = gemini.search_json("product_web_lookup", model, prompt)
     if not result.get("found"):
-        raise NotFound(name)
+        raise NotFound(query)
     return _from_ai(result, "Web search", sources[0][1] if sources else "", sources)
 
 
