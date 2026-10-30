@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from grocery import analytics, events, records, sheets
+from grocery.schema import STORAGE
 from grocery.views import product_ui
 from grocery.views.common import back_home
 
@@ -30,6 +31,7 @@ def render():
                         f"{i.get('emoji', '')} {i['name']}  ({levels[i['item_id']][1]})",
                         label_visibility="collapsed", key="ins_item")
     _picture(pick)
+    _kept_in(pick)
     summary = analytics.item_summary(pick["item_id"])
     _best_place(summary["best"], pick, cfg)
     _lifespan(summary, pick)
@@ -64,6 +66,18 @@ def _picture(item):
                 else:
                     records.set_item_picture(item["item_id"], pic)
                     st.rerun()
+
+
+def _kept_in(item):
+    """Where this item is kept; changing it moves it in Pantry."""
+    if item.get("kind") == "One-time":
+        return
+    current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
+    choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"kept_{item['item_id']}")
+    if choice and choice != current:
+        sheets.update_rows("items", "item_id", {item["item_id"]: {"storage": choice}})
+        st.toast(f"{item['name']} now kept in {choice}")
+        st.rerun()
 
 
 def _best_place(best, item, cfg):
