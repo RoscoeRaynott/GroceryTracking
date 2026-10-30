@@ -64,6 +64,11 @@ _Status: gathering requirements. No code until the plan is approved._
   - Libraries: `gspread` + `google-auth`, using a service account.
   - Secrets: `[gcp_service_account]` (the service account JSON), `[gsheets] spreadsheet_url`, and `GEMINI_API_KEY`.
   - Gemini is called directly over its REST API (`generativelanguage.googleapis.com`, `x-goog-api-key` header) with JSON output.
+- **Google's read limit (~60 reads/minute) and how the app stays under it:**
+  - The app keeps an in-memory copy of each tab. Opening the app reads each tab once; every save updates both the Sheet and the copy, so normal use needs no further reads.
+  - The copy is re-read from Google every 10 minutes, so edits made by hand in the Sheet show up within 10 minutes.
+  - Deleting rows always reads the tab fresh first, because deletes go by row number.
+  - If Google still answers "too many requests", the app waits (5 s, 15 s, 30 s) and retries instead of failing.
 
 ## Two levels of "item" (needed for ingredients)
 
