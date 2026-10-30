@@ -2,6 +2,7 @@
 
 Receipt: photos → (overlap questions) → review cards → save or discard.
 Barcode: barcode photos → product lookup → review cards (enter prices) → save or discard.
+Say it: speak or type what you bought → review cards → save or discard.
 """
 
 import datetime as dt
@@ -9,32 +10,30 @@ import uuid
 
 import streamlit as st
 
-from grocery import photos, productinfo, receipts, records, sheets, timeutil
+from grocery import photos, productinfo, receipts, records, sheets, timeutil, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views.common import back_home, go
 
-STATES = {"Receipt": "ap", "Barcode": "bc"}  # session-state namespace per mode
+STATES = {"Receipt": "ap", "Barcode": "bc", "Say it": "vc"}  # session-state namespace per mode
 
 
 def render():
     back_home()
     st.title("Add purchase")
-    mode = st.segmented_control("How", ["Receipt", "Barcode", "Say it"], default="Receipt",
+    st.session_state.setdefault("ap_mode", "Receipt")  # Voice update may preset "Say it"
+    mode = st.segmented_control("How", ["Receipt", "Barcode", "Say it"],
                                 label_visibility="collapsed", key="ap_mode")
-    if mode == "Say it":
-        st.info("Coming in **Phase 3**: add a purchase by voice.")
-        return
     mode = mode or "Receipt"
 
     key = STATES[mode]
     state = st.session_state.setdefault(key, _fresh(key))
-    {"photos": _photos_step, "questions": _questions_step, "scan": _scan_step,
+    {"photos": _photos_step, "questions": _questions_step, "scan": _scan_step, "speak": _speak_step,
      "review": _review_step, "saved": _saved_step}[state["stage"]](state)
 
 
 def _fresh(key):
-    return {"k": key, "stage": "photos" if key == "ap" else "scan",
+    return {"k": key, "stage": {"ap": "photos", "bc": "scan", "vc": "speak"}[key],
             "draft_id": f"D-{uuid.uuid4().hex[:8]}" if key == "ap" else "", "readings": [],
             "merged": [], "questions": [], "scans": [], "review": None, "interpretation": None}
 
@@ -42,7 +41,7 @@ def _fresh(key):
 def _reset(state):
     key = state["k"]
     st.session_state[key] = _fresh(key)
-    queue = "photos_queue" if key == "ap" else "barcode_queue"
+    queue = {"ap": "photos_queue", "bc": "barcode_queue", "vc": "vc_"}[key]
     for k in [k for k in st.session_state if k.startswith((f"{key}_", f"it_", queue))]:
         if k != "ap_mode":
             del st.session_state[k]
@@ -194,6 +193,68 @@ def _scan_text(sc):
     return " ".join(x for x in [sc.get("brand"), sc.get("name"), sc.get("quantity")] if x)
 
 
+# ---------------------------------------------------------------- say it
+
+def _speak_step(state):
+    st.caption("Say what you bought, e.g. “6 avocados, the 2-gallon milk and a salmon fillet from Costco”. "
+               "Usual purchases are filled in from your history.")
+    nonce = st.session_state.setdefault("vc_nonce", 0)
+    audio = st.audio_input("Tap the mic and speak", key=f"vc_audio_{nonce}")
+    typed = st.text_input("Or type it", key=f"vc_text_{nonce}")
+    go_typed = st.button("Use typed text", key=f"vc_go_{nonce}", disabled=not typed.strip())
+    if not (audio or go_typed):
+        return
+    with st.spinner("Listening…"):
+        try:
+            result, _, history_refs = voice.understand(
+                voice.model(), audio=(audio.getvalue(), audio.type or "audio/wav") if audio else None,
+                text=None if audio else typed, mode="add")
+        except GeminiError as ex:
+            st.error(f"Couldn't understand that: {ex}")
+            return
+    st.session_state["vc_nonce"] = nonce + 1
+    adds = [a for a in result.get("actions", []) if a.get("type") == "add"]
+    if not adds:
+        st.warning(f"I didn't hear any purchases in: “{result.get('transcript', '')}”. "
+                   "For finished or wasted food, use Voice update on the Home screen.")
+        return
+    start_voice_review(state, result, history_refs)
+    st.rerun()
+
+
+def start_voice_review(state, result, history_refs):
+    """Turn 'add' actions from the voice engine into review cards (shared with Voice update)."""
+    known = {records.norm(i["name"]): i for i in records.items()}
+    adds = [a for a in result.get("actions", []) if a.get("type") == "add"]
+    cards = []
+    for a in adds:
+        base = history_refs.get(a.get("based_on") or "", {})
+        existing = known.get(records.norm(a.get("item")))
+        price = _num(a.get("price"), None)
+        if price is None and base:
+            price = _num(base.get("price_paid"), None)
+        cards.append({
+            "uid": uuid.uuid4().hex[:8],
+            "item": existing["name"] if existing else (a.get("item") or "").strip(),
+            "kind": a.get("kind") if a.get("kind") in KINDS else "Food",
+            "unit": base.get("unit") or (a.get("unit") if a.get("unit") in UNITS else "each"),
+            "storage": a.get("storage") if a.get("storage") in STORAGE else "Fridge",
+            "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
+            "product": a.get("product") or base.get("product", ""), "brand": "",
+            "units": _num(a.get("units"), None) or _num(base.get("units"), 1.0),
+            "price": price, "packaged": a.get("packaged", True) is not False,
+            "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",
+            "receipt_text": f"said: {a.get('said') or result.get('transcript', '')}",
+        })
+    store = next((a.get("store") for a in adds if a.get("store")), "") or records.last_store()
+    date = _parse_date(next((a.get("purchased_on") for a in adds if a.get("purchased_on")), "")) \
+        or timeutil.now().date()
+    state.update(stage="review", interpretation=(voice.model(), result), review={
+        "store": store, "date": date, "time": "", "source": "voice", "total_paid": 0.0, "tax": None,
+        "items": cards, "skipped": [],
+    })
+
+
 # ---------------------------------------------------------------- overlap questions
 
 def _questions_step(state):
@@ -270,8 +331,9 @@ def _review_step(state):
             records.discard_draft(state["draft_id"])
         _reset(state)
         st.rerun()
-    if st.button("Back to photos" if k == "ap" else "Back to scanning", type="tertiary"):
-        state["stage"], state["review"] = ("photos" if k == "ap" else "scan"), None
+    back = {"ap": ("Back to photos", "photos"), "bc": ("Back to scanning", "scan"), "vc": ("Say it again", "speak")}[k]
+    if st.button(back[0], type="tertiary"):
+        state["stage"], state["review"] = back[1], None
         st.rerun()
 
 
@@ -434,7 +496,8 @@ def _save(state):
     payload = dict(review, date=review["date"].isoformat(), total_paid=round(total, 2) if total else "")
     readings = [("receipt_read", r["model"], r["reading"]) for r in state["readings"]]
     if state["interpretation"]:
-        readings.append(("receipt_items", *state["interpretation"]))
+        task = {"ap": "receipt_items", "bc": "barcode_items", "vc": "voice_add"}[state["k"]]
+        readings.append((task, *state["interpretation"]))
     with st.spinner("Saving to your Google Sheet…"):
         try:
             _, count = records.save_purchase(payload, finished, state["draft_id"], readings)
@@ -447,7 +510,7 @@ def _save(state):
 
 def _saved_step(state):
     st.success(f"Saved {state.get('saved_count', 0)} items to your Google Sheet.")
-    again = "Add another receipt" if state["k"] == "ap" else "Scan more items"
+    again = {"ap": "Add another receipt", "bc": "Scan more items", "vc": "Add more by voice"}[state["k"]]
     if st.button(again, type="primary", width="stretch"):
         _reset(state)
         st.rerun()

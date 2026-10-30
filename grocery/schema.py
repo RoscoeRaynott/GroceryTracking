@@ -26,8 +26,8 @@ TABS = {
         "status", "closed_on", "created_at",
     ],
     "events": [
-        "event_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",
-        "recorded_at", "source", "said", "undone",
+        "event_id", "change_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",
+        "expiry_date", "recorded_at", "source", "said", "previous", "undone",
     ],
     "ai_readings": ["reading_id", "purchase_id", "store", "at", "task", "model", "reading"],
     "drafts": ["draft_id", "photo_no", "photo_name", "created_at", "model", "reading"],

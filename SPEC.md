@@ -313,6 +313,14 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Needs info**: a small link on Home ("N food products need info") opens the list. Each product can be filled by label photo, barcode, or web search (confirm first), or marked "no label".
 - **Every decision so far is provisional** until the user has tested with real receipts. Expect changes after real use.
 
+## Phase 3 decisions (voice)
+
+- **One shared voice engine** behind both "Say it" (Add purchase) and "Voice update", ready to merge later.
+- **Ambiguous batch** ("the milk"): use the **most recent** open batch. The preview names the batch so a wrong pick is caught.
+- **Follow-up questions** are on-screen text with tap options ("Which milk? [Oct 14] [Oct 28]"). Spoken replies are **future work**.
+- **Deleting by voice is allowed**, always previewed and undoable.
+- **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
+
 ## Future: one central voice button (user request)
 
 - Eventually **one big voice button**. The user just talks, and the AI works out the intent:

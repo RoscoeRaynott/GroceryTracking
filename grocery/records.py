@@ -127,19 +127,14 @@ def save_purchase(review, finished, draft_id, readings):
     sheets.append_rows("batches", batches)
 
     if finished:
+        from grocery import events  # local import: events imports this module
+        new_ids = {b["batch_id"] for b in batches}
         open_now = open_batches_by_item()
-        closes, events = {}, []
-        for item_id, day in finished.items():
-            for b in open_now.get(item_id, []):
-                if b["batch_id"] in {x["batch_id"] for x in batches}:
-                    continue
-                closes[b["batch_id"]] = {"status": "closed", "closed_on": day}
-                events.append({"event_id": new_id("E"), "batch_id": b["batch_id"], "item": b["item"],
-                               "type": "finished", "wasted_fraction": 0, "happened_on": day,
-                               "recorded_at": now, "source": "receipt review",
-                               "said": f"Finished when restocking at {store['name']}", "undone": False})
-        sheets.update_rows("batches", "batch_id", closes)
-        sheets.append_rows("events", events)
+        events.apply([
+            {"type": "finish", "batch": b, "happened_on": day}
+            for item_id, day in finished.items() for b in open_now.get(item_id, [])
+            if b["batch_id"] not in new_ids
+        ], said=f"Finished when restocking at {store['name']}", source="receipt review")
 
     sheets.append_rows("ai_readings", [
         {"reading_id": new_id("A"), "purchase_id": purchase_id, "store": store["name"], "at": now,
@@ -216,3 +211,18 @@ def product_by_barcode(barcode):
 def last_store():
     rows = sheets.read_tab("purchases")
     return rows[-1]["store"] if rows else ""
+
+
+def purchase_history(limit=60):
+    """Most recent batch per (item, store, product), newest first, for voice quick-add."""
+    seen, out = set(), []
+    rows = [b for b in sheets.read_tab("batches") if b.get("status") != "deleted"]
+    for b in sorted(rows, key=lambda b: b.get("purchased_on", ""), reverse=True):
+        key = (b.get("item_id"), norm(b.get("store")), norm(b.get("product")))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(b)
+        if len(out) >= limit:
+            break
+    return out
