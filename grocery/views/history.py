@@ -19,8 +19,9 @@ def render():
     for p, batches in purchases:
         pid = p["purchase_id"]
         with st.container(border=True):
-            total = f" · ${p['total_paid']}" if p.get("total_paid") else ""
-            st.markdown(f"**{p['store']}** · {p['purchased_at']}{total}  \n"
+            total = f" · ${p['receipt_total']}" if p.get("receipt_total") else ""
+            when = f"{p['purchased_on']} {p.get('purchased_time', '')}".strip()
+            st.markdown(f"**{p['store']}** · {when}{total}  \n"
                         + ", ".join(f"{b['item']} ({b['units']} {b['unit']})" for b in batches))
             st.caption(f"Added {p.get('created_at', '')} by {p.get('source', '')}")
             if st.session_state.get("hist_confirm") == pid:

@@ -15,15 +15,11 @@ TABS = {
         "serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv",
         "photo_url", "info_source", "info_url", "info_status", "source", "created_at", "details",
     ],
-    "stores": ["store_id", "name", "type", "created_at"],
-    "purchases": [
-        "purchase_id", "store_id", "store", "purchased_at", "source", "items",
-        "total_paid", "notes", "created_at",
-    ],
+    # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [
         "batch_id", "purchase_id", "item_id", "item", "product_id", "product",
-        "store", "purchased_on", "units", "unit", "price_paid", "expiry_date",
-        "status", "closed_on", "created_at",
+        "store", "purchased_on", "purchased_time", "source", "units", "unit", "price_paid",
+        "receipt_total", "expiry_date", "status", "closed_on", "created_at",
     ],
     "events": [
         "event_id", "change_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",
