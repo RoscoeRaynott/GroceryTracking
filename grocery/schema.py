@@ -21,6 +21,7 @@ TABS = {
         "batch_id", "purchase_id", "item_id", "item", "product_id", "product",
         "store", "purchased_on", "purchased_time", "source", "units", "unit", "price_paid",
         "receipt_total", "expiry_date", "status", "closed_on", "created_at",
+        "packs",  # packs as sold (5 crates); units = packs x the product's pack size
     ],
     "events": [
         "event_id", "change_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",
@@ -49,4 +50,4 @@ DEFAULT_SETTINGS = {
 
 KINDS = ["Food", "Household", "One-time"]
 STORAGE = ["Fridge", "Freezer", "Open air"]
-UNITS = ["each", "lb", "oz", "gal", "qt", "fl oz", "loads"]
+UNITS = ["each", "lb", "oz", "gal", "qt", "fl oz", "ml", "loads"]

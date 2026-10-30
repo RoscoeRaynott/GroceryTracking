@@ -166,15 +166,24 @@ def _add_barcode(review, code):
     """Same card as Say it: known products bring their last price, pack size and storage."""
     same = next((c for c in review["items"] if c.get("barcode") == code), None)
     if same:  # scanned the same thing again: one more pack
-        same["units"] = float(same["units"]) + float(same.get("pack_units") or same["units"] or 1)
-        st.session_state.setdefault("bc_pending", {})[f"it_{same['uid']}_units"] = same["units"]
+        pending = st.session_state.setdefault("bc_pending", {})
+        if same.get("packs") is not None:
+            same["packs"] += 1
+            _pack_math(same)
+            pending[f"it_{same['uid']}_packs"] = same["packs"]
+            if same.get("price") is not None:
+                pending[f"it_{same['uid']}_price"] = same["price"]
+        else:
+            same["units"] = float(same["units"]) + float(same.get("pack_units") or same["units"] or 1)
+            pending[f"it_{same['uid']}_units"] = same["units"]
         st.toast(f"One more {same['item'] or 'item'}: {same['units']:g} {same['unit']}")
         return
 
     product = records.product_by_barcode(code)
     if product:
+        # One scan = one pack (not "the usual" number of packs).
         a = {"item": product.get("item", ""), "product": product["name"], "brand": product.get("brand", ""),
-             "units": None, "price": None}
+             "units": None, "price": None, "packs": 1 if _num(product.get("pack_size"), None) else None}
         card = _card_from_add(a, {}, "")
         card.update(barcode=code, receipt_text=f"barcode {code} · in your products")
     else:
@@ -257,30 +266,53 @@ def _card_from_add(a, history_refs, transcript):
         base = next((h for h in records.purchase_history()
                      if records.norm(h.get("product")) == records.norm(a["product"])), {})
     existing = known.get(records.norm(a.get("item")))
-    price = _num(a.get("price"), None)
-    if price is None and base:
-        price = _num(base.get("price_paid"), None)
-    units = _num(a.get("units"), None) or _num(base.get("units"), 1.0)
     product = next((p for p in records.products()
                     if records.norm(p["name"]) == records.norm(a.get("product") or base.get("product"))), {})
-    known_pack = _num(product.get("pack_size"), None)
-    if known_pack and units <= 1:
-        units = known_pack  # "I bought the eggs" = one full pack
-    return {
-        "pack_checked": bool(known_pack),
+    pack = _num(product.get("pack_size"), None)
+    packs, said_units = _num(a.get("packs"), None), _num(a.get("units"), None)
+    base_units = _num(base.get("units"), None)
+    # How many packs the last purchase was, to reuse "the usual" and its price per pack.
+    base_packs = _num(base.get("packs"), None) or (
+        base_units / pack if pack and base_units else 1.0 if base and base_units in (None, 1.0) else None)
+    if packs is None and said_units is None and pack:
+        packs = base_packs or 1.0  # "I bought the Costco water" = the usual number of packs, else one
+    pack_price = None
+    price = _num(a.get("price"), None)
+    if price is not None and packs is not None and not a.get("price_is_total"):
+        pack_price = price  # said per pack, like a receipt line
+    elif price is None and base:
+        price = _num(base.get("price_paid"), None)
+        if price is not None and packs is not None and base_packs:
+            pack_price = price / base_packs
+    unit = (product.get("pack_unit") if pack else None) or (existing or {}).get("unit") or base.get("unit") \
+        or (a.get("unit") if a.get("unit") in UNITS else "each")
+    card = {
+        "pack_checked": bool(pack), "packs": packs, "pack_size": pack, "pack_price": pack_price,
         "uid": uuid.uuid4().hex[:8],
         "item": existing["name"] if existing else (a.get("item") or "").strip(),
         "kind": a.get("kind") if a.get("kind") in KINDS else "Food",
-        "unit": base.get("unit") or (a.get("unit") if a.get("unit") in UNITS else "each"),
+        "unit": unit,
         "storage": a.get("storage") if a.get("storage") in STORAGE else "Fridge",
         "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
         "product": a.get("product") or base.get("product", ""), "brand": a.get("brand") or "",
         "said_name": a.get("said_name") or "", "wiki": a.get("wiki") or "",
-        "units": units,
+        "units": said_units or base_units or 1.0,
         "price": price, "packaged": a.get("packaged", True) is not False,
         "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",
         "receipt_text": f"said: {a.get('said') or transcript}",
     }
+    _pack_math(card)
+    return card
+
+
+def _pack_math(card):
+    """Counted in packs: units = packs x pack size (just the pack count until the size is known),
+    and a price known per pack covers every pack."""
+    if card.get("packs") is None:
+        return
+    card["units"] = card["packs"] * (card.get("pack_size") or 1.0)
+    if card.get("pack_price") is not None:
+        card["price"] = round(card["pack_price"] * card["packs"], 2)
 
 
 def _refine_mic(state, review):
@@ -316,13 +348,22 @@ def _refine_mic(state, review):
         if not isinstance(n, int) or not 0 <= n < len(cards):
             continue
         c = cards[n]
-        for field, value in _valid_changes(u).items():
+        fields = _valid_changes(u)
+        if "units" in fields and "packs" not in fields:
+            c["packs"] = None  # an amount in a measuring unit replaces the pack count
+        if "price" in fields and c.get("packs") is not None:
+            # A new price for packs is per pack, unless the user said it's the total.
+            c["pack_price"] = None if u.get("price_is_total") else fields["price"]
+        for field, value in fields.items():
             c[field] = value
             c.setdefault("user_set", set()).add(field)
             pending[f"it_{c['uid']}_{WIDGET.get(field, field)}"] = value
             changed.append(f"{c['item']}: {LABELS.get(field, field)} → {_show(value)}")
             if field == "price":
                 c.update(unclear=False, note="")
+        if "packs" in fields or "price" in fields:
+            _pack_math(c)
+            pending[f"it_{c['uid']}_price"] = c["price"]
     doomed = {n for n in result.get("removes", []) if isinstance(n, int)}
     review["items"] = [c for n, c in enumerate(cards) if n not in doomed]
     review["items"] += [_card_from_add(a, history_refs, result.get("transcript", ""))
@@ -339,7 +380,7 @@ def _refine_mic(state, review):
 
 
 WIDGET = {"perishable": "perish"}  # card field → its widget key suffix
-LABELS = {"storage": "kept in", "units": "quantity", "expiry_date": "expires", "perishable": "perishable"}
+LABELS = {"storage": "kept in", "units": "quantity", "packs": "packs", "expiry_date": "expires", "perishable": "perishable"}
 
 
 def _valid_changes(u):
@@ -348,6 +389,8 @@ def _valid_changes(u):
     for field in ("item", "product", "brand"):
         if isinstance(u.get(field), str) and u[field].strip():
             out[field] = u[field].strip()
+    if _num(u.get("packs"), None) is not None:
+        out["packs"] = _num(u["packs"], 1.0)
     if _num(u.get("units"), None) is not None:
         out["units"] = _num(u["units"], 1.0)
     if _num(u.get("price"), None) is not None:
@@ -545,8 +588,15 @@ def _card(c, review, known, open_by_item, open_fields):
         if c.get("expiry_date"):
             badges.append(f":orange-badge[exp {c['expiry_date']:%b %d}]")
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
+        if c.get("packs") is not None and not c.get("pack_size"):
+            amount = f"{c['packs']:g} pack{'s' if c['packs'] != 1 else ''}"
+            badges.insert(0, ":orange-badge[pack size?]")
+        else:
+            amount = f"{c['units']:g} {c['unit']}"
+            if c.get("packs") is not None and c["packs"] != 1:
+                badges.insert(0, f":blue-badge[{c['packs']:g} × {c['pack_size']:g} {c['unit']}]")
         with st.container(horizontal=True, vertical_alignment="center"):
-            st.markdown(f"{title} · {c['units']:g} {c['unit']} · {_money(c['price'])} {' '.join(badges)}")
+            st.markdown(f"{title} · {amount} · {_money(c['price'])} {' '.join(badges)}")
             if st.button("", key=f"it_{uid}_del", icon=":material/delete:", type="tertiary",
                          help="Delete this item; the rest stay"):
                 review["items"].remove(c)
@@ -561,8 +611,24 @@ def _card(c, review, known, open_by_item, open_fields):
                 st.warning(c["note"])
             c["item"] = st.text_input("Item", value=c["item"], key=f"it_{uid}_item")
             c["product"] = st.text_input("Product / brand", value=c["product"], key=f"it_{uid}_product")
-            c["units"] = st.number_input(f"Quantity ({c['unit']})", value=float(c["units"]), min_value=0.0,
-                                         step=1.0, key=f"it_{uid}_units")
+            if c.get("packs") is not None:
+                packs = st.number_input("Packs", value=float(c["packs"]), min_value=0.0, step=1.0,
+                                        key=f"it_{uid}_packs")
+                if packs != c["packs"]:
+                    c["packs"] = packs
+                    _pack_math(c)
+                    st.session_state.pop(f"it_{uid}_price", None)  # redraw the price from the card
+                    st.rerun()
+                if c.get("pack_size"):
+                    st.caption(f"{c['packs']:g} × {c['pack_size']:g} {c['unit']} = **{c['units']:g} {c['unit']}**"
+                               + (f" · {c['packs']:g} × {_money(c['pack_price'])}" if c.get("pack_price") is not None
+                                  else ""))
+                else:
+                    st.caption("Pack size not known yet. Look it up later in **Needs info**; "
+                               "the amount is then worked out for you.")
+            else:
+                c["units"] = st.number_input(f"Quantity ({c['unit']})", value=float(c["units"]), min_value=0.0,
+                                             step=1.0, key=f"it_{uid}_units")
             c["price"] = st.number_input("Price paid, after discounts, no tax ($)",
                                          value=c["price"], min_value=0.0, step=0.01, format="%.2f",
                                          key=f"it_{uid}_price", placeholder="Enter the price")

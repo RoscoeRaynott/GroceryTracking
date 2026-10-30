@@ -334,6 +334,15 @@ _Status: gathering requirements. No code until the plan is approved._
   - On review, **"Look up pack sizes online"** fills new packaged items that are still counted as 1.
   - In Needs info, a confirmed match also fixes earlier purchases of that product saved as "1".
   - Products remember `pack_size`, so "I bought the blue eggs" means one full pack (18) next time.
+- **Counting in packs (decided):**
+  - A bare count of a packaged product means **packs as sold**: "5 crates of Costco water" = 5 × 6 gal = **30 gal**; "2 Costco egg whites" = 2 × (6 cartons in mL).
+  - The item is still measured in its basic unit (gal, mL, each, lb). Batches keep `packs` too.
+  - An amount with a measuring unit ("2 gallons", "500 ml") or loose things ("6 avocados") is used as said.
+  - **A spoken price is per pack** (like a receipt line), so 5 crates at $4.75 = $23.75. It counts as the total only when the user says "total" / "altogether".
+  - Different stores are different products: Walmart egg whites have their own pack size (often a single carton), looked up separately.
+  - Pack size not known yet: the card shows "N packs · pack size?". The product appears in Needs info, and once its size is found, those purchases become packs × size.
+  - The review card shows the math as a badge (`5 × 6 gal`). Changing packs (in Details or by voice) recalculates the amount and price.
+  - New liquids are measured in **mL**, except drinking water and milk in **gal**.
 - **Mic button**: one big round button. Tap to start, tap the red stop to finish, or press and hold (release stops). No waveform or timer.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 
