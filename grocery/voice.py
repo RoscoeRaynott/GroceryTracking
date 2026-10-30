@@ -128,3 +128,57 @@ def parse_waste(batch, text):
         text=text.replace('"', "'"),
     )
     return gemini.generate_json("waste_text", model(), prompt)
+
+
+REFINE_PROMPT = """A grocery tracker user is reviewing a purchase before saving it, and is now adding details
+they missed or correcting mistakes. Today is {today} ({weekday}).
+
+{heard}
+
+THE PURCHASE AS IT STANDS
+Store: {store}   Date: {date}
+Items (index | item | product | quantity | price):
+{items}
+
+RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
+{history}
+
+Apply only what the user says. Examples: "it's from Costco" changes the store; "I bought it 3 days ago"
+changes the date; "the salmon was 2.4 pounds, 24 dollars" updates that item; "also a dozen eggs" adds an
+item; "remove the bananas" removes one. Product names should carry every detail they give (brand, cut,
+size). Leave anything they don't mention unchanged.
+
+Return only JSON:
+{{
+  "transcript": what the user said, word for word,
+  "store": new store or null, "date": new date "YYYY-MM-DD" or null,
+  "updates": [{{"index": item index, "item": new or null, "product": new or null, "units": new or null,
+               "unit": one of {units} or null, "price": new dollars or null}}],
+  "adds": [{{"item": generic item name, "product": full product description, "units": number,
+            "unit": one of {units}, "price": dollars or null, "based_on": purchase ref or null,
+            "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false,
+            "emoji": one emoji or "", "packaged": true/false}}],
+  "removes": [item indexes]
+}}"""
+
+
+def refine(review, audio=None, text=None):
+    """What the user adds or corrects on a review screen → store/date/updates/adds/removes."""
+    history = records.purchase_history()
+    history_refs = {f"h{n}": h for n, h in enumerate(history, start=1)}
+    now = timeutil.now()
+    prompt = REFINE_PROMPT.format(
+        today=now.strftime("%Y-%m-%d"), weekday=now.strftime("%A"),
+        heard="The user's voice recording is attached." if audio else f'The user typed: "{text}"',
+        store=review.get("store") or "(unknown)", date=review.get("date"),
+        items="\n".join(f"{n} | {c['item']} | {c['product']} | {c['units']:g} {c['unit']} | "
+                        f"{'$%.2f' % c['price'] if c['price'] is not None else 'price unknown'}"
+                        for n, c in enumerate(review["items"])) or "(none yet)",
+        history="\n".join(
+            f"{ref} | {h['item']} | {h.get('product', '')} | {h.get('store', '')} | {h.get('units', '')} "
+            f"{h.get('unit', '')} | ${h.get('price_paid', '')} | {h.get('purchased_on', '')}"
+            for ref, h in history_refs.items()) or "(none)",
+        units=UNITS, kinds=KINDS, storage=STORAGE,
+    )
+    result = gemini.generate_json("voice_refine", model(), prompt, [audio] if audio else [])
+    return result, history_refs

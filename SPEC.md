@@ -320,6 +320,7 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Follow-up questions** are on-screen text with tap options ("Which milk? [Oct 14] [Oct 28]"). Spoken replies are **future work**.
 - **Deleting by voice is allowed**, always previewed and undoable.
 - **Reporting waste closes the batch** (the wasted part went bad, the rest was eaten), unless the user says some is still left ("one avocado went bad, I still have the others").
+- **"Missed something?" mic on every review screen**: after the AI's first pass, speak or type what was missed or wrong (store, date, weight, price, another item, remove one). The cards update in place before saving.
 - **Mic button**: one big round button. Tap to start, tap the red stop to finish, or press and hold (release stops). No waveform or timer.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 

@@ -224,28 +224,8 @@ def _speak_step(state):
 
 def start_voice_review(state, result, history_refs):
     """Turn 'add' actions from the voice engine into review cards (shared with Voice update)."""
-    known = {records.norm(i["name"]): i for i in records.items()}
     adds = [a for a in result.get("actions", []) if a.get("type") == "add"]
-    cards = []
-    for a in adds:
-        base = history_refs.get(a.get("based_on") or "", {})
-        existing = known.get(records.norm(a.get("item")))
-        price = _num(a.get("price"), None)
-        if price is None and base:
-            price = _num(base.get("price_paid"), None)
-        cards.append({
-            "uid": uuid.uuid4().hex[:8],
-            "item": existing["name"] if existing else (a.get("item") or "").strip(),
-            "kind": a.get("kind") if a.get("kind") in KINDS else "Food",
-            "unit": base.get("unit") or (a.get("unit") if a.get("unit") in UNITS else "each"),
-            "storage": a.get("storage") if a.get("storage") in STORAGE else "Fridge",
-            "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
-            "product": a.get("product") or base.get("product", ""), "brand": "",
-            "units": _num(a.get("units"), None) or _num(base.get("units"), 1.0),
-            "price": price, "packaged": a.get("packaged", True) is not False,
-            "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",
-            "receipt_text": f"said: {a.get('said') or result.get('transcript', '')}",
-        })
+    cards = [_card_from_add(a, history_refs, result.get("transcript", "")) for a in adds]
     store = next((a.get("store") for a in adds if a.get("store")), "") or records.last_store()
     date = _parse_date(next((a.get("purchased_on") for a in adds if a.get("purchased_on")), "")) \
         or timeutil.now().date()
@@ -253,6 +233,86 @@ def start_voice_review(state, result, history_refs):
         "store": store, "date": date, "time": "", "source": "voice", "total_paid": 0.0, "tax": None,
         "items": cards, "skipped": [],
     })
+
+
+def _card_from_add(a, history_refs, transcript):
+    """A review card from one 'add' the voice engine heard, filled in from purchase history."""
+    known = {records.norm(i["name"]): i for i in records.items()}
+    base = history_refs.get(a.get("based_on") or "", {})
+    existing = known.get(records.norm(a.get("item")))
+    price = _num(a.get("price"), None)
+    if price is None and base:
+        price = _num(base.get("price_paid"), None)
+    return {
+        "uid": uuid.uuid4().hex[:8],
+        "item": existing["name"] if existing else (a.get("item") or "").strip(),
+        "kind": a.get("kind") if a.get("kind") in KINDS else "Food",
+        "unit": base.get("unit") or (a.get("unit") if a.get("unit") in UNITS else "each"),
+        "storage": a.get("storage") if a.get("storage") in STORAGE else "Fridge",
+        "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
+        "product": a.get("product") or base.get("product", ""), "brand": "",
+        "units": _num(a.get("units"), None) or _num(base.get("units"), 1.0),
+        "price": price, "packaged": a.get("packaged", True) is not False,
+        "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",
+        "receipt_text": f"said: {a.get('said') or transcript}",
+    }
+
+
+def _refine_mic(state, review):
+    """Mic (and text box) on every review screen: add details you missed or fix mistakes by voice."""
+    k = state["k"]
+    nonce = st.session_state.setdefault(f"{k}_ref_nonce", 0)
+    with st.container(border=True):
+        st.markdown("**Missed something?** :gray[Say it: store, date, weight, price, or another item]")
+        audio = recorder.record(f"{k}_ref_mic_{nonce}", "Tap to add or fix details")
+        typed = st.text_input("Or type it", key=f"{k}_ref_text_{nonce}", label_visibility="collapsed",
+                              placeholder="Or type it, e.g. from Costco, 3 days ago, salmon was 2.4 lb $24")
+        go_typed = st.button("Apply", key=f"{k}_ref_go_{nonce}", disabled=not typed.strip())
+    if not (audio or go_typed):
+        return
+    with st.spinner("Updating…"):
+        try:
+            result, history_refs = voice.refine(review, audio=audio, text=None if audio else typed)
+        except GeminiError as ex:
+            st.error(f"Couldn't understand that: {ex}")
+            return
+
+    pending = {}
+    if result.get("store"):
+        review["store"] = result["store"]
+        pending[f"{k}_store"] = result["store"]
+    date = _parse_date(result.get("date") or "")
+    if date:
+        review["date"] = date
+        pending[f"{k}_date"] = date
+    cards = review["items"]
+    for u in result.get("updates", []):
+        n = u.get("index")
+        if not isinstance(n, int) or not 0 <= n < len(cards):
+            continue
+        c = cards[n]
+        for field in ("item", "product"):
+            if u.get(field):
+                c[field] = str(u[field])
+                pending[f"it_{c['uid']}_{field}"] = c[field]
+        if _num(u.get("units"), None) is not None:
+            c["units"] = _num(u["units"], 1.0)
+            pending[f"it_{c['uid']}_units"] = c["units"]
+        if u.get("unit") in UNITS:
+            c["unit"] = u["unit"]
+            pending[f"it_{c['uid']}_unit"] = c["unit"]
+        if _num(u.get("price"), None) is not None:
+            c.update(price=_num(u["price"], None), unclear=False, note="")
+            pending[f"it_{c['uid']}_price"] = c["price"]
+    doomed = {n for n in result.get("removes", []) if isinstance(n, int)}
+    review["items"] = [c for n, c in enumerate(cards) if n not in doomed]
+    review["items"] += [_card_from_add(a, history_refs, result.get("transcript", ""))
+                        for a in result.get("adds", [])]
+    # Widgets already drawn this run can't be changed now; reset them on the rerun.
+    st.session_state[f"{k}_pending"] = pending
+    st.session_state[f"{k}_ref_nonce"] = nonce + 1
+    st.toast(f"Updated: {result.get('transcript', '')}"[:120])
+    st.rerun()
 
 
 # ---------------------------------------------------------------- overlap questions
@@ -282,6 +342,9 @@ def _review_step(state):
     review = state["review"]
 
     k = state["k"]
+    # Forget widget values the voice fix changed, so they redraw from the updated cards.
+    for key in st.session_state.pop(f"{k}_pending", {}):
+        st.session_state.pop(key, None)
     st.subheader("Review")
     review["store"] = st.text_input("Store", value=review["store"], key=f"{k}_store",
                                     help="Known stores: " + (", ".join(records.stores()) or "none yet"))
@@ -295,6 +358,7 @@ def _review_step(state):
         st.warning(f"Looks like a receipt you already saved: {dup['store']}, {dup['purchased_on']}, "
                    f"${dup['receipt_total']}. Save only if this is a different purchase.")
 
+    _refine_mic(state, review)
     cards = review["items"]
     _price_check(review)
 
