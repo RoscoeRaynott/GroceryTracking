@@ -72,6 +72,8 @@ Return only JSON:
       "product": product name as sold, expanded from receipt abbreviations
                  (e.g. "KS ORG EGGS 24CT" -> "Kirkland Signature Organic Eggs, 24 ct"),
       "brand": brand if known, else "",
+      "packaged": true if sold in a labelled package (has an ingredients list / nutrition label),
+                  false for loose produce, deli, bakery or anything without a label,
       "units": total quantity bought in the item's unit (e.g. 2 x 1-gallon jugs -> 2; a 6-ct bag
                of avocados -> 6; 2.31 lb of carrots -> 2.31; 104-load pods -> 104),
       "price": final price paid for this item in dollars AFTER its discounts, BEFORE tax,

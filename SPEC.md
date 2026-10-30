@@ -309,7 +309,9 @@ _Status: gathering requirements. No code until the plan is approved._
   4. **Label photo (ingredients + nutrition facts)**: always the truth, overrides everything.
 - **USDA FoodData Central** for fresh produce nutrition: free API key, signed up later (Phase 5).
 - **Testing vs real receipts**: the user decides. Old receipts can be real (scanned a day or two late).
-  - Needs a way to throw away a test read and to delete a saved receipt (design pending).
+  - Every Review screen ends with **"Save" or "Discard, don't save"**. Discard leaves the Sheet untouched.
+- **Needs info**: a small link on Home ("N food products need info") opens the list. Each product can be filled by label photo, barcode, or web search (confirm first), or marked "no label".
+- **Every decision so far is provisional** until the user has tested with real receipts. Expect changes after real use.
 
 ## Safeguards (decided)
 

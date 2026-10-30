@@ -11,9 +11,9 @@ TABS = {
         "emoji", "tracked", "created_at",
     ],
     "products": [
-        "product_id", "item_id", "item", "brand", "name", "barcode", "pack_units",
-        "serving_size", "servings_per_pack", "ingredients", "flags",
-        "nutrients_json", "abv", "photo_url", "source", "created_at",
+        "product_id", "item_id", "item", "brand", "name", "barcode", "packaged",
+        "serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv",
+        "photo_url", "info_source", "info_url", "info_status", "source", "created_at",
     ],
     "stores": ["store_id", "name", "type", "created_at"],
     "purchases": [
@@ -47,6 +47,7 @@ DEFAULT_SETTINGS = {
     "model_receipts": "gemini-3.8-flash",
     "model_voice": "gemini-3.8-flash",
     "model_labels": "gemini-3.5-flash-lite",
+    "model_lookup": "gemini-3.8-flash",
 }
 
 KINDS = ["Food", "Household", "One-time"]

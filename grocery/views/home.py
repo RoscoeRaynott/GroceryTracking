@@ -1,6 +1,6 @@
 import streamlit as st
 
-from grocery import sheets
+from grocery import records, sheets
 from grocery.views.common import go
 
 BIG_BUTTONS_CSS = """
@@ -19,6 +19,12 @@ def render():
         st.error("Not connected to your Google Sheet yet. Open **Settings** to see why.")
 
     # Reminders appear here once Phase 4 adds lifespan and expiry tracking.
+    if not err:
+        missing = len(records.products_needing_info())
+        if missing:
+            label = f"{missing} food product{'s' if missing != 1 else ''} need{'s' if missing == 1 else ''} info"
+            if st.button(label, icon=":material/info:", type="tertiary"):
+                go("needs_info")
 
     st.markdown(BIG_BUTTONS_CSS, unsafe_allow_html=True)
     with st.container(key="home_nav", gap="medium"):

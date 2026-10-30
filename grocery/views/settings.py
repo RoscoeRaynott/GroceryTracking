@@ -8,6 +8,7 @@ MODEL_TASKS = {
     "model_receipts": "Reading receipts",
     "model_voice": "Understanding voice",
     "model_labels": "Reading labels",
+    "model_lookup": "Searching the web for products",
 }
 
 # (key, label, kind, min, step)

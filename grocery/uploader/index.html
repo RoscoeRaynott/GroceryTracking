@@ -23,8 +23,8 @@
 </head>
 <body>
   <label class="card" for="file-input">
-    <div class="big">Tap to add receipt photos or screenshots</div>
-    <div class="small">Pick one or several. Long receipt? Add overlapping photos.</div>
+    <div class="big" id="big">Tap to add photos</div>
+    <div class="small" id="small"></div>
     <div id="status"></div>
   </label>
   <input type="file" id="file-input" accept="image/*" multiple>
@@ -55,6 +55,9 @@
       if (event.data && event.data.type === "streamlit:render") {
         const theme = event.data.theme;
         if (theme && theme.textColor) document.body.style.color = theme.textColor;
+        const args = event.data.args || {};
+        if (args.label) document.getElementById("big").textContent = args.label;
+        document.getElementById("small").textContent = args.hint || "";
         fitHeight();
       }
     });

@@ -1,6 +1,6 @@
 import streamlit as st
 
-from grocery.views import add_purchase, common, home, settings
+from grocery.views import add_purchase, common, home, needs_info, settings
 
 st.set_page_config(page_title="Grocery Tracker", page_icon="🛒", layout="centered")
 
@@ -8,6 +8,7 @@ PAGES = {
     "home": home.render,
     "settings": settings.render,
     "add": add_purchase.render,
+    "needs_info": needs_info.render,
     "voice": lambda: common.coming_soon(
         "Voice update", 3, "finished / wasted / expiry updates by voice, with preview and Undo."),
     "pantry": lambda: common.coming_soon(

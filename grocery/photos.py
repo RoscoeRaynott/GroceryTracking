@@ -32,7 +32,7 @@ _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploader")
 _uploader = components.declare_component("receipt_uploader", path=_DIR)
 
 
-def pick_photos(queue_key):
+def pick_photos(queue_key, label="Tap to add photos", hint=""):
     """Show the uploader and add any new photos to st.session_state[queue_key].
 
     Each photo is {"name": str, "data": jpeg bytes}.
@@ -42,7 +42,7 @@ def pick_photos(queue_key):
 
     if st.session_state.get(f"{queue_key}_fallback"):
         files = st.file_uploader(
-            "Receipt photos or screenshots", type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
+            label, type=["jpg", "jpeg", "png", "webp", "heic", "heif"],
             accept_multiple_files=True, key=f"{queue_key}_std_{nonce}",
         )
         seen = st.session_state.setdefault(f"{queue_key}_seen", set())
@@ -61,7 +61,7 @@ def pick_photos(queue_key):
             st.rerun()
         return
 
-    value = _uploader(key=f"{queue_key}_up_{nonce}")
+    value = _uploader(label=label, hint=hint, key=f"{queue_key}_up_{nonce}")
     if not isinstance(value, dict):
         return
     if value.get("need_fallback"):
