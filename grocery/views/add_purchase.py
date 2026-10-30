@@ -488,7 +488,8 @@ def _review_step(state):
         if picked.strip():
             review["store"] = picked.strip()
     st.markdown("**Save this to your Google Sheet?**")
-    if st.button(f"Save {len(cards)} items", type="primary", width="stretch", disabled=not cards):
+    if st.button(f"Save {len(cards)} item{'' if len(cards) == 1 else 's'}", type="primary",
+                 width="stretch", disabled=not cards):
         _save(state)
     if st.button("Discard, don't save", width="stretch", key=f"{k}_discard"):
         if state["draft_id"]:
@@ -571,7 +572,14 @@ def _card(c, review, known, open_by_item, open_fields):
         if c["unclear"]:
             badges.append(":orange-badge[Check this]")
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
-        st.markdown(f"{title} · {_money(c['price'])}  \n{' '.join(badges)}")
+        with st.container(horizontal=True, vertical_alignment="top"):
+            st.markdown(f"{title} · {_money(c['price'])}  \n{' '.join(badges)}")
+            # Big, obvious delete for a card that was misheard or misread.
+            if st.button("Delete", key=f"it_{uid}_del", icon=":material/delete:", type="secondary",
+                         help="Remove this item; the rest stay"):
+                review["items"].remove(c)
+                st.toast(f"Removed {c['item'] or 'item'}")
+                st.rerun()
         st.caption(f"{c['product'] or '—'} · {c['units']:g} {c['unit']} · receipt: “{c['receipt_text']}”")
         if c.get("pack_note"):
             st.markdown(f":blue-badge[pack from store site: {c['pack_note']}]")
@@ -621,9 +629,6 @@ def _card(c, review, known, open_by_item, open_fields):
                 c["finished_on"] = st.date_input("Finished on", value=timeutil.now().date(),
                                                  key=f"it_{uid}_done_on", format="MM/DD/YYYY")
 
-        if st.button("Remove", key=f"it_{uid}_rm", type="tertiary"):
-            review["items"].remove(c)
-            st.rerun()
 
 
 def _price_check(review):
