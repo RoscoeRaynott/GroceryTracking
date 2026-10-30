@@ -13,6 +13,7 @@ the same way. Results from 2 and 3 must be confirmed by the user.
 import io
 import json
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -297,4 +298,33 @@ def page_image(url):
         m = re.search(pattern, html, re.I)
         if m and m.group(1).startswith("http"):
             return m.group(1)
+    return ""
+
+
+class TryLater(Exception):
+    pass
+
+
+def wiki_image(*titles):
+    """A generic picture for an item from its English Wikipedia article (free, no key).
+
+    Tries each title in turn. Returns the image URL, "" if none of the articles has one,
+    or raises TryLater when Wikipedia is busy (so the lookup is retried another time).
+    """
+    for title in [t for t in titles if t and str(t).strip()]:
+        params = urllib.parse.urlencode({"action": "query", "prop": "pageimages", "format": "json",
+                                         "piprop": "thumbnail", "pithumbsize": 200, "redirects": 1,
+                                         "titles": str(title).strip()})
+        try:
+            data = _get_json(f"https://en.wikipedia.org/w/api.php?{params}")
+        except urllib.error.HTTPError as ex:
+            if ex.code == 429:
+                raise TryLater() from ex
+            continue
+        except Exception as ex:
+            raise TryLater() from ex
+        for page in data.get("query", {}).get("pages", {}).values():
+            src = page.get("thumbnail", {}).get("source")
+            if src:
+                return src
     return ""

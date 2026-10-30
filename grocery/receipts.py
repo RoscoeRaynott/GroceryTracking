@@ -69,6 +69,8 @@ Return only JSON:
       "storage": one of {storage} (where it is usually kept; "Open air" means pantry/counter),
       "perishable": true or false,
       "emoji": one food emoji for the item, or "" if none fits,
+      "wiki": the English Wikipedia article title that best pictures this generic item (e.g. "Egg white",
+              "Catla" for katla fish, "Ilish" for hilsa, "Half and half"), or "",
       "product": product name as sold, expanded from receipt abbreviations
                  (e.g. "KS ORG EGGS 24CT" -> "Kirkland Signature Organic Eggs, 24 ct"),
       "brand": brand if known, else "",
