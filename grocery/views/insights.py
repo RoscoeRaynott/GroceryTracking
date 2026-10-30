@@ -30,6 +30,8 @@ def render():
     pick = st.selectbox("Item", items, format_func=lambda i: f"{DOT[levels[i['item_id']][0]]} "
                         f"{i.get('emoji', '')} {i['name']}  ({levels[i['item_id']][1]})",
                         label_visibility="collapsed", key="ins_item")
+    # The selectbox can hand back the row as it was when picked; use the fresh one.
+    pick = next((i for i in items if i["item_id"] == pick["item_id"]), pick)
     _picture(pick)
     _kept_in(pick)
     summary = analytics.item_summary(pick["item_id"])
