@@ -4,7 +4,7 @@ import streamlit as st
 
 from grocery import events, voice
 from grocery.gemini import GeminiError
-from grocery.views import add_purchase
+from grocery.views import add_purchase, history
 from grocery.views.common import back_home, go
 
 UPDATE_TYPES = ("waste", "finish", "expiry", "delete")
@@ -117,17 +117,4 @@ def _line(a):
 
 def _recent_changes():
     st.subheader("Recent changes")
-    changes = events.recent(20)
-    if not changes:
-        st.caption("Nothing yet.")
-        return
-    for c in changes:
-        with st.container(border=True, horizontal=True, vertical_alignment="center"):
-            text = "  \n".join(c["lines"])
-            st.markdown(f"~~{text}~~" if c["undone"] else text)
-            if c["undone"]:
-                st.caption("Undone")
-            elif c["change_id"] and st.button("Undo", key=f"vu_undo_{c['change_id']}", type="tertiary"):
-                events.undo(c["change_id"])
-                st.toast("Undone")
-                st.rerun()
+    history.render_changes()

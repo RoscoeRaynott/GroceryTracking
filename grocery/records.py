@@ -58,7 +58,7 @@ def save_purchase(review, finished, draft_id, readings):
     readings = [(task, model, json-able reading)] kept in ai_readings
     """
     now = timeutil.now_str()
-    store_name = review["store"].strip()
+    store_name = canonical_store(review["store"])
 
     store = next((s for s in stores() if norm(s["name"]) == norm(store_name)), None)
     if store is None:
@@ -249,3 +249,34 @@ def save_product_match(product_id, info):
     sheets.update_rows("products", "product_id", {product_id: {
         "info_status": "none", "info_source": "Web search", "info_url": info.get("url", ""), "details": details,
     }})
+
+
+def canonical_store(name):
+    """Costco and Costco Business Center sell the same products: one store, "Costco"."""
+    name = re.sub(r"\s+", " ", str(name or "")).strip()
+    return "Costco" if "costco" in name.lower() else name
+
+
+def recent_purchases(limit=20):
+    """Newest purchases with their batches: [(purchase row, [batch rows])]."""
+    batches = sheets.read_tab("batches")
+    rows = sorted(sheets.read_tab("purchases"), key=lambda p: p.get("created_at", ""), reverse=True)[:limit]
+    return [(p, [b for b in batches if b.get("purchase_id") == p["purchase_id"]]) for p in rows]
+
+
+def delete_purchase(purchase_id):
+    """Erase a purchase completely (for test entries): its batches, their events, its AI readings,
+    and any item, product or store that nothing else uses any more."""
+    batch_ids = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("purchase_id") == purchase_id}
+    sheets.remove_rows("events", lambda r: r.get("batch_id") in batch_ids)
+    sheets.remove_rows("batches", lambda r: r.get("purchase_id") == purchase_id)
+    sheets.remove_rows("purchases", lambda r: r.get("purchase_id") == purchase_id)
+    sheets.remove_rows("ai_readings", lambda r: r.get("purchase_id") == purchase_id)
+
+    batches = sheets.read_tab("batches")
+    used_items = {b.get("item_id") for b in batches}
+    used_products = {b.get("product_id") for b in batches}
+    used_stores = {p.get("store_id") for p in sheets.read_tab("purchases")}
+    sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products)
+    sheets.remove_rows("items", lambda r: r.get("item_id") not in used_items)
+    sheets.remove_rows("stores", lambda r: r.get("store_id") not in used_stores)

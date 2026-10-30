@@ -38,5 +38,8 @@ def render():
             go("insights")
 
     st.write("")
-    if st.button("Settings", icon=":material/settings:", type="tertiary"):
-        go("settings")
+    with st.container(horizontal=True):
+        if st.button("History & undo", icon=":material/history:", type="tertiary"):
+            go("history")
+        if st.button("Settings", icon=":material/settings:", type="tertiary"):
+            go("settings")
