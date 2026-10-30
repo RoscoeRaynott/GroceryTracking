@@ -25,7 +25,9 @@ KNOWN ITEMS (generic item names): {items}
 Work out every action the user wants. Possible actions:
 - "waste": part or all of a batch went bad / was thrown away. "fraction" = share of the WHOLE batch
   as bought (2 avocados of a 6-pack = 0.3333; "half the spinach" = 0.5; "a third" = 0.3333).
-  The batch stays open unless the user says it is finished.
+  Reporting waste normally means the batch is done: the wasted part went bad and the rest was eaten,
+  so set "batch_done": true. Set it to false ONLY if the user says some is still left to eat
+  (e.g. "one avocado went bad, I still have the others").
 - "finish": a batch is used up. "rest_wasted": true if they say the remainder was thrown away.
 - "expiry": the user says when a batch expires. "expiry_date" as YYYY-MM-DD.
 - "delete": the user wants a batch removed (e.g. "delete the avocados I added yesterday").
@@ -40,7 +42,8 @@ Return only JSON:
 {{
   "transcript": what the user said, word for word,
   "actions": [
-    {{"type": "waste", "batch": ref, "fraction": number, "happened_on": "YYYY-MM-DD", "said": short quote}},
+    {{"type": "waste", "batch": ref, "fraction": number, "batch_done": true/false, "happened_on": "YYYY-MM-DD",
+      "said": short quote}},
     {{"type": "finish", "batch": ref, "happened_on": "YYYY-MM-DD", "rest_wasted": true/false, "said": short quote}},
     {{"type": "expiry", "batch": ref, "expiry_date": "YYYY-MM-DD", "said": short quote}},
     {{"type": "delete", "batch": ref, "said": short quote}},
