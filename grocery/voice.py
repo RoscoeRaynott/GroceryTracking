@@ -26,8 +26,10 @@ Work out every action the user wants. Possible actions:
 - "waste": part or all of a batch went bad / was thrown away. "fraction" = share of the WHOLE batch
   as bought (2 avocados of a 6-pack = 0.3333; "half the spinach" = 0.5; "a third" = 0.3333).
   Reporting waste normally means the batch is done: the wasted part went bad and the rest was eaten,
-  so set "batch_done": true. Set it to false ONLY if the user says some is still left to eat
-  (e.g. "one avocado went bad, I still have the others").
+  so set "batch_done": true. Set it to false ONLY if the user explicitly says some is still left
+  or salvageable (e.g. "one bell pepper got fungus, the other two are fine", "two slices of cheese
+  went bad, the rest is still good", "200 grams wasted, 500 grams still left"). When they give
+  amounts, "fraction" is still the wasted share of the WHOLE batch as bought.
 - "finish": a batch is used up. "rest_wasted": true if they say the remainder was thrown away.
 - "expiry": the user says when a batch expires. "expiry_date" as YYYY-MM-DD.
 - "delete": the user wants a batch removed (e.g. "delete the avocados I added yesterday").
