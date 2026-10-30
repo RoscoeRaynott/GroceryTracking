@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- In-app camera.
+       mode "barcode": live scanning; each barcode found is sent at once (beep + vibrate), then it keeps scanning.
+                       Uses Chrome's built-in BarcodeDetector (Android), else the bundled ZXing library.
+       mode "photo":   a big shutter button; each photo is sent as a JPEG (long edge 3072 px). -->
+  <script src="./zxing.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0;
+        font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: transparent; color: #31333F; padding: 4px 2px; overflow: hidden;
+           user-select: none; -webkit-user-select: none; }
+    .start { width: 100%; min-height: 64px; border: none; border-radius: 12px; background: #1F7A4D; color: #fff;
+             font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 10px; }
+    #view { position: relative; display: none; border-radius: 12px; overflow: hidden; background: #000; }
+    video { width: 100%; display: block; max-height: 62vh; object-fit: cover; }
+    #frame { position: absolute; left: 10%; right: 10%; top: 32%; bottom: 32%; border: 3px solid rgba(255,255,255,.85);
+             border-radius: 10px; transition: border-color .15s; pointer-events: none; }
+    #frame.hit { border-color: #2ECC71; }
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 2px 0; }
+    #status { font-size: 16px; font-weight: 600; flex: 1; }
+    .ghost { border: 1px solid rgba(128,128,128,.5); background: transparent; color: inherit; border-radius: 10px;
+             min-height: 44px; padding: 0 14px; font-size: 15px; font-weight: 600; }
+    #shutter { display: none; margin: 12px auto 0; width: 76px; height: 76px; border-radius: 50%; border: 5px solid #fff;
+               background: #1F7A4D; box-shadow: 0 0 0 3px #1F7A4D; }
+    #shutter:active { transform: scale(.94); }
+  </style>
+</head>
+<body>
+  <button class="start" id="start">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"
+         stroke-linejoin="round" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+    <span id="startLabel">Open camera</span>
+  </button>
+  <div id="view">
+    <video id="video" playsinline muted></video>
+    <div id="frame"></div>
+  </div>
+  <button id="shutter" aria-label="Take photo"></button>
+  <div class="bar" id="bar" style="display:none">
+    <div id="status"></div>
+    <button class="ghost" id="stop">Close camera</button>
+  </div>
+  <canvas id="canvas" style="display:none"></canvas>
+
+  <script>
+    const MAX_DIM = 3072, QUALITY = 0.9, PAUSE_MS = 1500;
+    const $ = (id) => document.getElementById(id);
+    const video = $("video"), canvas = $("canvas"), status = $("status");
+    let mode = "barcode", stream = null, running = false, detector = null, zx = null, pausedUntil = 0, lastCode = "";
+
+    function send(type, data = {}) { window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*"); }
+    function fit() { send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 6 }); }
+    send("streamlit:componentReady", { apiVersion: 1 });
+    window.addEventListener("load", fit);
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "streamlit:render") {
+        const t = e.data.theme;
+        if (t && t.textColor) document.body.style.color = t.textColor;
+        const args = e.data.args || {};
+        mode = args.mode || "barcode";
+        if (!running) $("startLabel").textContent = args.label || (mode === "barcode" ? "Scan barcodes" : "Open camera");
+        fit();
+      }
+    });
+    function emit(value) {
+      send("streamlit:setComponentValue", { value: Object.assign({ id: Date.now() + "_" + Math.random().toString(36).slice(2, 8) }, value) });
+    }
+    function say(text) { status.textContent = text; fit(); }
+
+    $("start").addEventListener("click", start);
+    $("stop").addEventListener("click", stop);
+    $("shutter").addEventListener("click", snap);
+
+    async function start() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
+          facingMode: { ideal: "environment" }, width: { ideal: mode === "photo" ? 3840 : 1920 },
+          height: { ideal: mode === "photo" ? 2160 : 1080 } } });
+      } catch (err) {
+        say("Camera blocked. Allow it for this site in Chrome, then try again.");
+        $("bar").style.display = "flex";
+        return;
+      }
+      video.srcObject = stream;
+      await video.play();
+      running = true;
+      $("start").style.display = "none";
+      $("view").style.display = "block";
+      $("bar").style.display = "flex";
+      if (mode === "photo") {
+        $("frame").style.display = "none";
+        $("shutter").style.display = "block";
+        say("Tap the button for each photo");
+      } else {
+        $("shutter").style.display = "none";
+        say("Point at a barcode");
+        if ("BarcodeDetector" in window) {
+          try { detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] }); } catch (e) { detector = null; }
+        }
+        if (!detector && window.ZXing) {
+          const hints = new Map();
+          hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+            ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E, ZXing.BarcodeFormat.CODE_128]);
+          hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+          zx = new ZXing.MultiFormatReader();
+          zx.setHints(hints);
+        }
+        scanLoop();
+      }
+      fit();
+    }
+
+    function stop() {
+      running = false;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      stream = null;
+      $("view").style.display = "none";
+      $("shutter").style.display = "none";
+      $("bar").style.display = "none";
+      $("start").style.display = "flex";
+      fit();
+    }
+
+    async function scanLoop() {
+      if (!running || mode !== "barcode") return;
+      if (Date.now() >= pausedUntil && video.readyState >= 2) {
+        const code = await detect();
+        if (code && !(code === lastCode && Date.now() < pausedUntil + 2500)) {
+          lastCode = code;
+          pausedUntil = Date.now() + PAUSE_MS;
+          $("frame").classList.add("hit");
+          beep();
+          if (navigator.vibrate) navigator.vibrate(120);
+          say("Got " + code + ". Next one…");
+          emit({ kind: "barcode", code: code });
+          setTimeout(() => $("frame").classList.remove("hit"), 600);
+        }
+      }
+      setTimeout(scanLoop, 180);
+    }
+
+    async function detect() {
+      try {
+        if (detector) {
+          const found = await detector.detect(video);
+          return found.length ? found[0].rawValue : "";
+        }
+        if (zx) {
+          // Decode the middle band of the frame, where the guide box is.
+          const w = video.videoWidth, h = video.videoHeight;
+          const cw = Math.min(1280, w), ch = Math.round(cw * h / w);
+          canvas.width = cw; canvas.height = ch;
+          canvas.getContext("2d").drawImage(video, 0, 0, cw, ch);
+          const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+          const result = zx.decodeWithState(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source)));
+          return result ? result.getText() : "";
+        }
+      } catch (e) { /* no barcode in this frame */ }
+      return "";
+    }
+
+    function beep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.frequency.value = 1200; g.gain.value = 0.15;
+        o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime + 0.12);
+        setTimeout(() => ctx.close(), 300);
+      } catch (e) {}
+    }
+
+    async function snap() {
+      if (!running) return;
+      say("Saving photo…");
+      let source = video, w = video.videoWidth, h = video.videoHeight;
+      try {
+        // Full camera resolution where the browser allows it (Chrome on Android does).
+        if ("ImageCapture" in window) {
+          const bmp = await new ImageCapture(stream.getVideoTracks()[0]).grabFrame();
+          source = bmp; w = bmp.width; h = bmp.height;
+        }
+      } catch (e) {}
+      const scale = Math.min(1, MAX_DIM / Math.max(w, h));
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
+      emit({ kind: "photo", data: canvas.toDataURL("image/jpeg", QUALITY) });
+      $("view").style.opacity = "0.4";
+      setTimeout(() => { $("view").style.opacity = "1"; say("Photo added. Take another, or close the camera."); }, 250);
+    }
+  </script>
+</body>
+</html>

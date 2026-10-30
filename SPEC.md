@@ -369,6 +369,13 @@ _Status: gathering requirements. No code until the plan is approved._
   - In Insights → item → **Change picture**, type a better word if two items look alike.
 - **Picture order**: the product's own photo → the item's picture → emoji.
 
+## In-app camera (built; needs testing on the Pixel)
+
+- **Barcode: live scanning.** Point the camera; each barcode beeps, vibrates and is added, then scanning continues for the next item.
+  - Uses Chrome's built-in barcode reader on Android, else the bundled open-source ZXing library (Apache-2.0, `grocery/camera/`).
+- **Receipt: in-app camera** with a big shutter button. Each photo is read right away, as before.
+- Gallery pickers stay available under "Or pick … from your gallery".
+
 ## Design principle: visual first (user rule, applies everywhere)
 
 - **Easy for the eyes, intuitive, minimal reading.** Use colors, badges, charts and icons instead of sentences.

@@ -10,7 +10,7 @@ import uuid
 
 import streamlit as st
 
-from grocery import photos, productinfo, receipts, recorder, records, sheets, timeutil, voice
+from grocery import camera, photos, productinfo, receipts, recorder, records, sheets, timeutil, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views.common import back_home, go
@@ -55,9 +55,13 @@ def _photos_step(state):
     if not state["readings"] and not st.session_state.get("photos_queue"):
         _offer_resume(state)
 
-    st.caption("Add the top of the receipt first. Long receipt? Add overlapping photos.")
-    photos.pick_photos("photos_queue", "Tap to add receipt photos or screenshots",
-                       "Pick one or several. Long receipt? Add overlapping photos.")
+    st.caption("Snap the top of the receipt first. Long receipt? Take overlapping photos.")
+    snapped = camera.photo("ap_cam", "Open camera to snap the receipt")
+    if snapped:
+        st.session_state.setdefault("photos_queue", []).append(snapped)
+    with st.expander("Or pick photos / app screenshots from your gallery"):
+        photos.pick_photos("photos_queue", "Tap to add receipt photos or screenshots",
+                           "Pick one or several. Long receipt? Add overlapping photos.")
 
     # Read each new photo straight away and save the reading as a draft,
     # so a page reload can't lose it.
@@ -129,8 +133,12 @@ def _offer_resume(state):
 def _scan_step(state):
     state["store"] = st.text_input("Store", value=state.get("store") or records.last_store(), key="bc_store_in")
     st.caption(f"Date: today ({timeutil.now():%b %d}). You'll enter prices on the next screen.")
-    photos.pick_photos("barcode_queue", "Tap to photograph a barcode",
-                       "One item per photo. Fill most of the photo with the barcode.")
+    code = camera.barcodes("bc_cam", "Scan barcodes")
+    if code:
+        _add_scan(state, code)
+    with st.expander("Or pick barcode photos from your gallery"):
+        photos.pick_photos("barcode_queue", "Tap to add barcode photos",
+                           "One item per photo. Fill most of the photo with the barcode.")
 
     queue = st.session_state.get("barcode_queue", [])
     for photo in queue:
