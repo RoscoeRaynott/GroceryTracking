@@ -63,18 +63,33 @@ def generate_json(task, model, prompt, media=()):
 
     Every call is logged to the ai_log tab (model, tokens, seconds).
     """
+    result, _ = _generate(task, model, prompt, media, search=False)
+    return result
+
+
+def search_json(task, model, prompt):
+    """Like generate_json, but Gemini may search Google first.
+
+    Returns (parsed JSON, [(title, url)] of the web pages it used).
+    """
+    return _generate(task, model, prompt, (), search=True)
+
+
+def _generate(task, model, prompt, media, search):
     key = api_key()
     if not key:
         raise GeminiError("No Gemini API key in Streamlit secrets.")
     parts = [{"text": prompt}]
     for data, mime in media:
         parts.append({"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}})
-    body = json.dumps({
-        "contents": [{"role": "user", "parts": parts}],
-        "generationConfig": {"responseMimeType": "application/json"},
-    }).encode("utf-8")
+    body = {"contents": [{"role": "user", "parts": parts}]}
+    if search:
+        # JSON mode can't be combined with tools on every model, so the prompt asks for JSON instead.
+        body["tools"] = [{"google_search": {}}]
+    else:
+        body["generationConfig"] = {"responseMimeType": "application/json"}
     req = urllib.request.Request(
-        f"{API}/models/{model}:generateContent", data=body,
+        f"{API}/models/{model}:generateContent", data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
     )
 
@@ -95,26 +110,32 @@ def generate_json(task, model, prompt, media=()):
             except urllib.error.URLError as ex:
                 raise GeminiError(f"Could not reach Gemini: {ex.reason}") from ex
         usage = data.get("usageMetadata", {})
-        text = "".join(
-            p.get("text", "")
-            for c in data.get("candidates", [])[:1]
-            for p in c.get("content", {}).get("parts", [])
-        )
+        candidate = (data.get("candidates") or [{}])[0]
+        text = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])
+                       if not p.get("thought"))
         if not text:
-            reason = (data.get("candidates") or [{}])[0].get("finishReason") or data.get("promptFeedback")
+            reason = candidate.get("finishReason") or data.get("promptFeedback")
             raise GeminiError(f"Gemini {model} returned no text ({reason}).")
         result = _parse_json(text)
+        sources = [
+            (c["web"].get("title", ""), c["web"].get("uri", ""))
+            for c in candidate.get("groundingMetadata", {}).get("groundingChunks", [])
+            if c.get("web", {}).get("uri")
+        ]
         ok = True
-        return result
+        return result, sources
     finally:
         _log(task, model, usage, time.time() - started, ok)
 
 
 def _parse_json(text):
     text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else ""
-        text = text.rsplit("```", 1)[0]
+    if "```" in text:
+        text = text.split("```", 1)[1]
+        text = text.split("\n", 1)[1] if text.lower().startswith("json") else text
+        text = text.split("```", 1)[0]
+    if not text.lstrip().startswith(("{", "[")) and "{" in text:
+        text = text[text.index("{"):text.rindex("}") + 1]
     try:
         return json.loads(text)
     except json.JSONDecodeError as ex:

@@ -4,7 +4,7 @@ import json
 import re
 import uuid
 
-from grocery import sheets, timeutil
+from grocery import productinfo, sheets, timeutil
 
 CHAINS = {
     "costco", "walmart", "safeway", "kroger", "h-e-b", "heb", "target", "trader joe's",
@@ -80,18 +80,30 @@ def save_purchase(review, finished, draft_id, readings):
             new_items.append(row)
     sheets.append_rows("items", new_items)
 
-    products = {(p["item_id"], norm(p["name"])): p for p in sheets.read_tab("products")}
-    new_products = []
+    existing_products = sheets.read_tab("products")
+    products = {(p["item_id"], norm(p["name"])): p for p in existing_products}
+    by_barcode = {p["barcode"]: p for p in existing_products if p.get("barcode")}
+    new_products, info_updates = [], {}
     for card in review["items"]:
         item = known[norm(card["item"])]
         key = (item["item_id"], norm(card["product"]))
-        if card["product"].strip() and key not in products:
+        found = by_barcode.get(card.get("barcode")) or products.get(key)
+        if found:
+            products[key] = found
+            if card.get("info") and found.get("info_status") != "confirmed":
+                info_updates[found["product_id"]] = dict(productinfo.product_columns(card["info"]),
+                                                         barcode=card.get("barcode", ""))
+        elif card["product"].strip():
             row = {"product_id": new_id("P"), "item_id": item["item_id"], "item": item["name"],
                    "brand": card.get("brand", ""), "name": card["product"].strip(),
-                   "source": "receipt", "created_at": now}
+                   "barcode": card.get("barcode", ""), "packaged": card.get("packaged", True),
+                   "source": review["source"], "created_at": now}
+            if card.get("info"):
+                row.update(productinfo.product_columns(card["info"]))
             products[key] = row
             new_products.append(row)
     sheets.append_rows("products", new_products)
+    sheets.update_rows("products", "product_id", info_updates)
 
     purchase_id = new_id("R")
     purchased_at = f"{review['date']} {review['time']}".strip()
@@ -167,3 +179,40 @@ def discard_draft(draft_id, photo_no=None):
         sheets.delete_rows_where("drafts", draft_id=draft_id)
     else:
         sheets.delete_rows_where("drafts", draft_id=draft_id, photo_no=photo_no)
+
+
+def products_needing_info():
+    """Packaged foods with no ingredients yet, newest first, with their item's emoji."""
+    food = {i["item_id"]: i for i in items() if i.get("kind") == "Food"}
+    out = []
+    for p in sheets.read_tab("products"):
+        if p["item_id"] not in food or p.get("packaged") == "no":
+            continue
+        if p.get("info_status") in ("confirmed", "none") or p.get("ingredients"):
+            continue
+        out.append(dict(p, emoji=food[p["item_id"]].get("emoji", "")))
+    return sorted(out, key=lambda p: p.get("created_at", ""), reverse=True)
+
+
+def save_product_info(product_id, info, barcode=""):
+    changes = productinfo.product_columns(info)
+    if barcode:
+        changes["barcode"] = barcode
+    sheets.update_rows("products", "product_id", {product_id: changes})
+
+
+def mark_no_info(product_id, packaged=True):
+    """The user says this product has no label to read (or isn't packaged)."""
+    changes = {"info_status": "none"}
+    if not packaged:
+        changes["packaged"] = "no"
+    sheets.update_rows("products", "product_id", {product_id: changes})
+
+
+def product_by_barcode(barcode):
+    return next((p for p in sheets.read_tab("products") if p.get("barcode") == barcode), None)
+
+
+def last_store():
+    rows = sheets.read_tab("purchases")
+    return rows[-1]["store"] if rows else ""
