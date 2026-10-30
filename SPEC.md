@@ -321,6 +321,13 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Deleting by voice is allowed**, always previewed and undoable.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 
+## History & undo (decided)
+
+- **Costco and Costco Business Center are one store, "Costco"** (same products). Web searches check both sites.
+- A **"History & undo"** link on Home has two lists:
+  - **Recent purchases (last 20) with Delete.** Delete **erases** the purchase completely: its batches, their events, its AI readings, and any item, product, or store nothing else uses. Meant for test entries.
+  - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
+
 ## Future: one central voice button (user request)
 
 - Eventually **one big voice button**. The user just talks, and the AI works out the intent:

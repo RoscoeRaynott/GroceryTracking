@@ -174,6 +174,28 @@ def delete_rows_where(title, **match):
     read_tab.clear()
 
 
+def remove_rows(title, should_remove):
+    """Remove every data row for which should_remove(row dict) is true, in two API calls.
+
+    The kept rows are written over the top first and only then is the leftover
+    tail cleared, so a failure part-way never loses kept data.
+    """
+    ws = _sheet().worksheet(title)
+    values = ws.get_all_values()
+    if len(values) <= 1:
+        return 0
+    header = values[0]
+    keep = [header] + [r for r in values[1:] if not should_remove(dict(zip(header, r + [""] * len(header))))]
+    removed = len(values) - len(keep)
+    if removed:
+        width = max(len(header), max(len(r) for r in values))
+        padded = [r + [""] * (width - len(r)) for r in keep]
+        ws.update(padded, "A1")
+        ws.batch_clear([f"A{len(keep) + 1}:{rowcol_to_a1(len(values), width)}"])
+        read_tab.clear()
+    return removed
+
+
 def _cell(value):
     if value is None:
         return ""
