@@ -159,6 +159,8 @@ nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means 
 {products}
 
 Apply only what the user says; anything about an item can change, not just price and weight.
+If the store is unknown and they name a store brand, set the store too (Kirkland = Costco,
+Great Value = Walmart, Signature Select = Safeway, H-E-B brand = H-E-B, Member's Mark = Sam's Club).
 Examples: "I keep raspberries in the freezer" sets that item's storage to Freezer; "it's from Costco" changes the store; "I bought it 3 days ago"
 changes the date; "the salmon was 2.4 pounds, 24 dollars" updates that item; "also a dozen eggs" adds an
 item; "remove the bananas" removes one. Product names should carry every detail they give (brand, cut,
