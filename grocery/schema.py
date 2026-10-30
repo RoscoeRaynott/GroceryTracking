@@ -13,7 +13,7 @@ TABS = {
     "products": [
         "product_id", "item_id", "item", "brand", "name", "barcode", "packaged",
         "serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv",
-        "photo_url", "info_source", "info_url", "info_status", "source", "created_at",
+        "photo_url", "info_source", "info_url", "info_status", "source", "created_at", "details",
     ],
     "stores": ["store_id", "name", "type", "created_at"],
     "purchases": [

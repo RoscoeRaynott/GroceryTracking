@@ -45,7 +45,10 @@ Return only JSON:
     {{"type": "expiry", "batch": ref, "expiry_date": "YYYY-MM-DD", "said": short quote}},
     {{"type": "delete", "batch": ref, "said": short quote}},
     {{"type": "add", "item": generic item name (an existing one if it matches), "is_new": true/false,
-      "store": store or null, "product": product name, "units": number, "unit": one of {units},
+      "store": store exactly as said (e.g. "Costco Business Center") or null,
+      "product": FULL product description with every detail the user said: brand, cut, variety,
+                 pack size, where it is sold (e.g. "Costco Business Center whole mutton, 15 lb"),
+      "units": number, "unit": one of {units},
       "price": dollars or null if unknown, "based_on": purchase ref or null, "purchased_on": "YYYY-MM-DD",
       "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false, "emoji": one emoji or "",
       "packaged": true/false, "said": short quote}}

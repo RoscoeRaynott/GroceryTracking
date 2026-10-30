@@ -55,14 +55,15 @@ def _fill(p):
             else:
                 _lookup(pid, lambda: productinfo.off_by_barcode(code), barcode=code)
     with tab_web:
-        st.caption(f"Searches for “{p.get('brand', '')} {p['name']}”. You'll check the result before it's saved.")
-        if st.button("Search", key=f"ni_web_{pid}", type="primary"):
+        query = st.text_area("Search for", value=records.product_search_text(p), key=f"ni_q_{pid}",
+                             help="Everything known about this product. Add or fix details to make the search exact.")
+        st.caption("You'll check the result before it's saved.")
+        if st.button("Search", key=f"ni_web_{pid}", type="primary", disabled=not query.strip()):
             def search():
                 try:
                     return productinfo.off_by_name(p.get("brand", ""), p["name"])
                 except productinfo.NotFound:
-                    return productinfo.web_lookup(sheets.get_settings()["model_lookup"],
-                                                  p.get("brand", ""), p["name"])
+                    return productinfo.web_lookup(sheets.get_settings()["model_lookup"], query)
             _lookup(pid, search)
 
     st.divider()

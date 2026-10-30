@@ -97,7 +97,9 @@ def save_purchase(review, finished, draft_id, readings):
             row = {"product_id": new_id("P"), "item_id": item["item_id"], "item": item["name"],
                    "brand": card.get("brand", ""), "name": card["product"].strip(),
                    "barcode": card.get("barcode", ""), "packaged": card.get("packaged", True),
-                   "source": review["source"], "created_at": now}
+                   "source": review["source"], "created_at": now,
+                   "details": f"{card['units']:g} {card['unit']} at {store['name']}; "
+                              f"{card.get('receipt_text', '')}".strip("; ")}
             if card.get("info"):
                 row.update(productinfo.product_columns(card["info"]))
             products[key] = row
@@ -226,3 +228,15 @@ def purchase_history(limit=60):
         if len(out) >= limit:
             break
     return out
+
+
+def product_search_text(p):
+    """Everything known about a product, for an exact web search."""
+    latest = max((b for b in sheets.read_tab("batches") if b.get("product_id") == p["product_id"]),
+                 key=lambda b: b.get("purchased_on", ""), default={})
+    parts = [p.get("brand", ""), p["name"]]
+    if latest:
+        parts.append(f"{latest.get('units', '')} {latest.get('unit', '')} pack bought at {latest.get('store', '')}")
+    if p.get("details"):
+        parts.append(f"({p['details']})")
+    return " ".join(x for x in parts if x and x.strip())
