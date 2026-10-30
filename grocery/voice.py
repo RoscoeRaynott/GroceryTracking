@@ -108,3 +108,23 @@ def understand(model, audio=None, text=None, mode="any"):
 
 def model():
     return sheets.get_settings()["model_voice"]
+
+
+WASTE_PROMPT = """A grocery tracker user is reporting that part of one batch went bad. Today is {today}.
+Batch: {item} ({product}), bought {bought}: {units} {unit}.
+They wrote: "{text}"
+Work out the wasted share of the WHOLE batch as bought (e.g. "200 grams" of a 15 lb pack = 200/6804;
+"one bell pepper" of 3 = 0.3333; "half" = 0.5). Convert units as needed.
+"batch_done" is true unless they say some is still left or salvageable.
+Return only JSON: {{"fraction": number between 0 and 1, "batch_done": true/false,
+"happened_on": "YYYY-MM-DD" (today unless they say otherwise), "summary": a 3-8 word restatement}}"""
+
+
+def parse_waste(batch, text):
+    """Free-text 'some went bad' for one known batch → {"fraction", "batch_done", "happened_on", "summary"}."""
+    prompt = WASTE_PROMPT.format(
+        today=timeutil.today_str(), item=batch.get("item", ""), product=batch.get("product", ""),
+        bought=batch.get("purchased_on", ""), units=batch.get("units", ""), unit=batch.get("unit", ""),
+        text=text.replace('"', "'"),
+    )
+    return gemini.generate_json("waste_text", model(), prompt)
