@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Big one-button voice recorder.
+       Tap: start; tap the red stop: finish.  Press and hold: records while held, stops on release.
+       Records 16 kHz mono WAV in the browser (a format Gemini accepts) and sends it to Python. -->
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0;
+        font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: transparent; color: #31333F; display: flex; flex-direction: column;
+           align-items: center; gap: 12px; padding: 12px 4px; overflow: hidden;
+           user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    button {
+      width: 132px; height: 132px; border-radius: 50%; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: none; -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); transition: transform 0.1s ease;
+    }
+    button:active { transform: scale(0.96); }
+    .idle { background: #1F7A4D; }
+    .recording { background: #C62828; animation: pulse 1.4s ease-in-out infinite; }
+    .busy { background: #8A8F98; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.45); }
+                       50% { box-shadow: 0 0 0 16px rgba(198, 40, 40, 0); } }
+    #status { font-size: 18px; font-weight: 600; text-align: center; min-height: 24px; }
+  </style>
+</head>
+<body>
+  <button id="btn" class="idle" aria-label="Start recording">
+    <svg id="mic" width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>
+    </svg>
+    <svg id="stop" width="46" height="46" viewBox="0 0 24 24" aria-hidden="true" style="display:none">
+      <rect x="5" y="5" width="14" height="14" rx="2.5" fill="#fff"></rect>
+    </svg>
+  </button>
+  <div id="status">Tap to speak</div>
+
+  <script>
+    const RATE = 16000, HOLD_MS = 600;
+    const btn = document.getElementById("btn"), status = document.getElementById("status");
+    const mic = document.getElementById("mic"), stopIcon = document.getElementById("stop");
+    let state = "idle", stream = null, ctx = null, source = null, node = null, chunks = [];
+    let pressedAt = 0, startedByThisPress = false, idleText = "Tap to speak";
+
+    function send(type, data = {}) { window.parent.postMessage({ isStreamlitMessage: true, type, ...data }, "*"); }
+    function fit() { send("streamlit:setFrameHeight", { height: document.body.scrollHeight + 4 }); }
+    send("streamlit:componentReady", { apiVersion: 1 });
+    window.addEventListener("load", fit);
+    window.addEventListener("message", (e) => {
+      if (e.data && e.data.type === "streamlit:render") {
+        const t = e.data.theme;
+        if (t && t.textColor) document.body.style.color = t.textColor;
+        const args = e.data.args || {};
+        if (args.prompt) { idleText = args.prompt; if (state === "idle") status.textContent = idleText; }
+        fit();
+      }
+    });
+    document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    function show(newState, text) {
+      state = newState;
+      btn.className = newState === "recording" ? "recording" : newState === "busy" ? "busy" : "idle";
+      mic.style.display = newState === "recording" ? "none" : "block";
+      stopIcon.style.display = newState === "recording" ? "block" : "none";
+      btn.setAttribute("aria-label", newState === "recording" ? "Stop recording" : "Start recording");
+      status.textContent = text;
+      fit();
+    }
+
+    btn.addEventListener("pointerdown", async (e) => {
+      e.preventDefault();
+      if (state === "recording") { finish(); return; }
+      if (state !== "idle") return;
+      pressedAt = Date.now();
+      startedByThisPress = true;
+      await start();
+    });
+    btn.addEventListener("pointerup", () => {
+      // Held down long enough: this was press-and-hold, so releasing stops.
+      if (state === "recording" && startedByThisPress && Date.now() - pressedAt > HOLD_MS) finish();
+      startedByThisPress = false;
+    });
+
+    async function start() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true,
+                                                                       noiseSuppression: true } });
+      } catch (err) {
+        show("idle", "Microphone blocked. Allow it for this site in Chrome, then try again.");
+        return;
+      }
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      source = ctx.createMediaStreamSource(stream);
+      node = ctx.createScriptProcessor(4096, 1, 1);
+      chunks = [];
+      node.onaudioprocess = (ev) => chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0)));
+      source.connect(node);
+      node.connect(ctx.destination);
+      show("recording", "Listening… tap to stop");
+    }
+
+    function finish() {
+      if (state !== "recording") return;
+      show("busy", "Got it. Working on it…");
+      const inRate = ctx.sampleRate;
+      node.disconnect(); source.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      ctx.close();
+      const wav = toWav(downsample(join(chunks), inRate, RATE), RATE);
+      const reader = new FileReader();
+      reader.onload = () => {
+        send("streamlit:setComponentValue", {
+          value: { id: Date.now() + "_" + Math.random().toString(36).slice(2, 8), data: reader.result }
+        });
+        setTimeout(() => show("idle", idleText), 1500);
+      };
+      reader.readAsDataURL(new Blob([wav], { type: "audio/wav" }));
+    }
+
+    function join(parts) {
+      const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+      let at = 0;
+      for (const p of parts) { out.set(p, at); at += p.length; }
+      return out;
+    }
+    function downsample(input, from, to) {
+      if (from === to) return input;
+      const ratio = from / to, out = new Float32Array(Math.floor(input.length / ratio));
+      for (let i = 0; i < out.length; i++) {
+        const a = Math.floor(i * ratio), b = Math.min(input.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        for (let j = a; j < b; j++) sum += input[j];
+        out[i] = sum / Math.max(1, b - a);
+      }
+      return out;
+    }
+    function toWav(samples, rate) {
+      const buf = new ArrayBuffer(44 + samples.length * 2), v = new DataView(buf);
+      const text = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+      text(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); text(8, "WAVE");
+      text(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true);
+      v.setUint16(34, 16, true); text(36, "data"); v.setUint32(40, samples.length * 2, true);
+      for (let i = 0; i < samples.length; i++) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+      return buf;
+    }
+  </script>
+</body>
+</html>

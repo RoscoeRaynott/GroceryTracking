@@ -10,7 +10,7 @@ import uuid
 
 import streamlit as st
 
-from grocery import photos, productinfo, receipts, records, sheets, timeutil, voice
+from grocery import photos, productinfo, receipts, recorder, records, sheets, timeutil, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views.common import back_home, go
@@ -199,7 +199,7 @@ def _speak_step(state):
     st.caption("Say what you bought, e.g. “6 avocados, the 2-gallon milk and a salmon fillet from Costco”. "
                "Usual purchases are filled in from your history.")
     nonce = st.session_state.setdefault("vc_nonce", 0)
-    audio = st.audio_input("Tap the mic and speak", key=f"vc_audio_{nonce}")
+    audio = recorder.record(f"vc_mic_{nonce}", "Tap and say what you bought")
     typed = st.text_input("Or type it", key=f"vc_text_{nonce}")
     go_typed = st.button("Use typed text", key=f"vc_go_{nonce}", disabled=not typed.strip())
     if not (audio or go_typed):
@@ -207,7 +207,7 @@ def _speak_step(state):
     with st.spinner("Listening…"):
         try:
             result, _, history_refs = voice.understand(
-                voice.model(), audio=(audio.getvalue(), audio.type or "audio/wav") if audio else None,
+                voice.model(), audio=audio,
                 text=None if audio else typed, mode="add")
         except GeminiError as ex:
             st.error(f"Couldn't understand that: {ex}")

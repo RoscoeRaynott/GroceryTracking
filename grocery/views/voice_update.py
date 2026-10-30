@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from grocery import events, voice
+from grocery import events, recorder, voice
 from grocery.gemini import GeminiError
 from grocery.views import add_purchase, history
 from grocery.views.common import back_home, go
@@ -27,7 +27,7 @@ def _listen():
     st.caption("e.g. “Two avocados and half the spinach went bad. Butter finished three days ago. "
                "The milk expires November 2nd.”")
     nonce = st.session_state.setdefault("vu_nonce", 0)
-    audio = st.audio_input("Tap the mic and speak", key=f"vu_audio_{nonce}")
+    audio = recorder.record(f"vu_mic_{nonce}")
     typed = st.text_input("Or type it", key=f"vu_text_{nonce}")
     go_typed = st.button("Use typed text", key=f"vu_go_{nonce}", disabled=not typed.strip())
     if not (audio or go_typed):
@@ -35,7 +35,7 @@ def _listen():
     with st.spinner("Listening…"):
         try:
             result, batch_refs, history_refs = voice.understand(
-                voice.model(), audio=(audio.getvalue(), audio.type or "audio/wav") if audio else None,
+                voice.model(), audio=audio,
                 text=None if audio else typed, mode="update")
         except GeminiError as ex:
             st.error(f"Couldn't understand that: {ex}")
