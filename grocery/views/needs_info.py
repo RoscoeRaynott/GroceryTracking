@@ -98,7 +98,7 @@ def _confirm(p, info):
     if info.get("reason"):
         st.caption(info["reason"])
     if info.get("url"):
-        st.markdown(f"[Open product page]({info['url']})")
+        st.markdown(f"[Open the page it used]({info['url']})")
     if info.get("no_label_info"):
         st.info("Found the product, but its page lists no ingredients or Nutrition Facts "
                 "(common for raw meat, fish and produce).")
@@ -118,8 +118,8 @@ def _confirm(p, info):
         st.write(f"Ingredients: {info['ingredients']}")
     else:
         st.warning("No ingredients list in this result.")
-    for title, url in info.get("sources", [])[:3]:
-        st.markdown(f"- [{title or 'source'}]({url})")
+    for title, url in info.get("sources", [])[1:3]:
+        st.markdown(f"- [{title or 'other source'}]({url})")
 
     with st.container(horizontal=True):
         if st.button("Yes, save it", key=f"ni_yes_{pid}", type="primary"):

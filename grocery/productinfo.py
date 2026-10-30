@@ -178,7 +178,8 @@ def web_lookup(model, query):
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
     info = _from_ai(dict(result.get("info") or {}, name=result.get("matched_name") or ""), "Web search",
-                    result.get("matched_url") or (sources[0][1] if sources else ""), sources)
+                    # The pages Google actually returned are reliable; a URL the model types itself may be made up.
+                    sources[0][1] if sources else result.get("matched_url") or "", sources)
     info["no_label_info"] = not result.get("has_label_info") or not (info["ingredients"] or info["nutrients"])
     info["reason"] = result.get("reason", "")
     return info
