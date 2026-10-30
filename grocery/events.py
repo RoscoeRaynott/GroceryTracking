@@ -55,7 +55,9 @@ def apply(actions, said, source):
         if a["type"] == "waste":
             fraction = max(0.0, min(_num(a.get("fraction")), 1.0 - wasted))
             event(b, "wasted", wasted_fraction=round(fraction, 4), happened_on=day)
-            if wasted + fraction >= 0.999:
+            if a.get("batch_done", True) or wasted + fraction >= 0.999:
+                # The wasted part went bad and the rest was eaten: the batch is finished.
+                event(b, "finished", wasted_fraction=0, happened_on=day)
                 batch_changes.setdefault(bid, {}).update(status="closed", closed_on=day)
         elif a["type"] == "finish":
             if a.get("rest_wasted") and wasted < 0.999:

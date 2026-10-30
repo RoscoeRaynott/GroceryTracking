@@ -319,6 +319,7 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Ambiguous batch** ("the milk"): use the **most recent** open batch. The preview names the batch so a wrong pick is caught.
 - **Follow-up questions** are on-screen text with tap options ("Which milk? [Oct 14] [Oct 28]"). Spoken replies are **future work**.
 - **Deleting by voice is allowed**, always previewed and undoable.
+- **Reporting waste closes the batch** (the wasted part went bad, the rest was eaten), unless the user says some is still left ("one avocado went bad, I still have the others").
 - **Mic button**: one big round button. Tap to start, tap the red stop to finish, or press and hold (release stops). No waveform or timer.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 

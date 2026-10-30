@@ -106,7 +106,10 @@ def _line(a):
     b = a["batch"]
     name = f"**{b['item']}** (bought {b.get('purchased_on', '?')}, {b.get('store', '')})"
     if a["type"] == "waste":
-        return f"{name}: {events.fraction_text(float(a.get('fraction') or 0))} wasted on {a.get('happened_on')} · stays open"
+        wasted = events.fraction_text(float(a.get("fraction") or 0))
+        if a.get("batch_done", True):
+            return f"{name}: {wasted} wasted, the rest eaten · batch closed on {a.get('happened_on')}"
+        return f"{name}: {wasted} wasted on {a.get('happened_on')} · rest still left, stays open"
     if a["type"] == "finish":
         rest = " · the rest was thrown away" if a.get("rest_wasted") else ""
         return f"{name}: finished on {a.get('happened_on')}{rest} · batch closed"
