@@ -22,6 +22,10 @@ RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
 
 KNOWN ITEMS (generic item names): {items}
 
+KNOWN PRODUCTS with the user's own nicknames (ref | item | product | nicknames). When the user uses a
+nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
+{products}
+
 Work out every action the user wants. Possible actions:
 - "waste": part or all of a batch went bad / was thrown away. "fraction" = share of the WHOLE batch
   as bought (2 avocados of a 6-pack = 0.3333; "half the spinach" = 0.5; "a third" = 0.3333).
@@ -55,6 +59,8 @@ Return only JSON:
                  pack size, where it is sold (e.g. "Costco Business Center whole mutton, 15 lb"),
       "units": number, "unit": one of {units},
       "price": dollars or null if unknown, "based_on": purchase ref or null, "purchased_on": "YYYY-MM-DD",
+      "product_ref": known product ref if it is one of KNOWN PRODUCTS, else null,
+      "said_name": the exact words the user used for this product,
       "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false, "emoji": one emoji or "",
       "packaged": true/false, "said": short quote}}
   ],
@@ -93,16 +99,19 @@ def understand(model, audio=None, text=None, mode="any"):
         for ref, h in history_refs.items()
     ) or "(none)"
 
+    product_refs = records.products_prompt_lines()
     now = timeutil.now()
     heard = "The user's voice recording is attached." if audio else f'The user typed: "{text}"'
     prompt = PROMPT.format(
         today=now.strftime("%Y-%m-%d"), weekday=now.strftime("%A"), heard=heard,
         batches=batch_lines, history=history_lines,
         items=", ".join(i["name"] for i in records.items()) or "(none yet)",
+        products=products_text(product_refs),
         mode_rule=MODE_RULES[mode], units=UNITS, kinds=KINDS, storage=STORAGE,
     )
     media = [(audio[0], audio[1])] if audio else []
     result = gemini.generate_json("voice", model, prompt, media)
+    _attach_products(result.get("actions", []), product_refs)
     return result, batch_refs, history_refs
 
 
@@ -143,6 +152,10 @@ Items (index | item | product | quantity | price):
 RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
 {history}
 
+KNOWN PRODUCTS with the user's own nicknames (ref | item | product | nicknames). When the user uses a
+nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
+{products}
+
 Apply only what the user says. Examples: "it's from Costco" changes the store; "I bought it 3 days ago"
 changes the date; "the salmon was 2.4 pounds, 24 dollars" updates that item; "also a dozen eggs" adds an
 item; "remove the bananas" removes one. Product names should carry every detail they give (brand, cut,
@@ -156,6 +169,7 @@ Return only JSON:
                "unit": one of {units} or null, "price": new dollars or null}}],
   "adds": [{{"item": generic item name, "product": full product description, "units": number,
             "unit": one of {units}, "price": dollars or null, "based_on": purchase ref or null,
+            "product_ref": known product ref or null, "said_name": the user's exact words for it,
             "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false,
             "emoji": one emoji or "", "packaged": true/false}}],
   "removes": [item indexes]
@@ -166,8 +180,10 @@ def refine(review, audio=None, text=None):
     """What the user adds or corrects on a review screen → store/date/updates/adds/removes."""
     history = records.purchase_history()
     history_refs = {f"h{n}": h for n, h in enumerate(history, start=1)}
+    product_refs = records.products_prompt_lines()
     now = timeutil.now()
     prompt = REFINE_PROMPT.format(
+        products=products_text(product_refs),
         today=now.strftime("%Y-%m-%d"), weekday=now.strftime("%A"),
         heard="The user's voice recording is attached." if audio else f'The user typed: "{text}"',
         store=review.get("store") or "(unknown)", date=review.get("date"),
@@ -181,4 +197,27 @@ def refine(review, audio=None, text=None):
         units=UNITS, kinds=KINDS, storage=STORAGE,
     )
     result = gemini.generate_json("voice_refine", model(), prompt, [audio] if audio else [])
+    _attach_products(result.get("adds", []), product_refs)
     return result, history_refs
+
+
+def products_text(product_refs):
+    return "\n".join(f"{ref} | {p.get('item', '')} | {p['name']} | {p.get('nicknames', '')}"
+                     for ref, p in product_refs.items()) or "(none yet)"
+
+
+def _attach_products(actions, product_refs):
+    """Swap a product ref for the real product row, so the purchase reuses that product."""
+    for a in actions:
+        p = product_refs.get(a.get("product_ref") or "")
+        if p:
+            a["product"], a["brand"], a["item"] = p["name"], p.get("brand", ""), p.get("item") or a.get("item")
+
+
+NICKNAME_PROMPT = """The user is saying one or more nicknames they use for the grocery product "{product}".
+Return only JSON: {{"nicknames": [each nickname exactly as said, short phrases]}}"""
+
+
+def nicknames_from_audio(audio, product_name):
+    result = gemini.generate_json("nickname", model(), NICKNAME_PROMPT.format(product=product_name), [audio])
+    return [n for n in result.get("nicknames", []) if isinstance(n, str) and n.strip()]

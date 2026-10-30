@@ -340,6 +340,18 @@ _Status: gathering requirements. No code until the plan is approved._
   - IDs never change, even if a name is edited later.
 - Old test data: the user deletes it via History & undo, then removes the old "stores" and "purchases" tabs by hand.
 
+## Product photos & nicknames (decided)
+
+- **Photos**, with no extra AI cost. Shown in Needs info, Insights and Pantry (instead of the emoji).
+  - The Open Food Facts photo for barcode scans.
+  - A **tiny thumbnail of the user's own label photo**, about 1–5 KB, stored in the Sheet.
+  - Best effort: the store page's preview image after a web search. Many store sites block this.
+- **Web search links** come from the pages Google actually returned, never a URL the model typed (those could 404).
+- **Nicknames** per product, in a `nicknames` column separated by ";":
+  - Added by mic or text in Needs info and in Insights → Products. Each one can be removed.
+  - **Saved automatically** when the user names a product by voice in their own words and it matches.
+  - The voice AI sees every known product with its nicknames and reuses that product (and its last price and size).
+
 ## Design principle: visual first (user rule, applies everywhere)
 
 - **Easy for the eyes, intuitive, minimal reading.** Use colors, badges, charts and icons instead of sentences.

@@ -239,6 +239,10 @@ def _card_from_add(a, history_refs, transcript):
     """A review card from one 'add' the voice engine heard, filled in from purchase history."""
     known = {records.norm(i["name"]): i for i in records.items()}
     base = history_refs.get(a.get("based_on") or "", {})
+    if not base and a.get("product"):
+        # A known product (e.g. said by nickname): start from its last purchase.
+        base = next((h for h in records.purchase_history()
+                     if records.norm(h.get("product")) == records.norm(a["product"])), {})
     existing = known.get(records.norm(a.get("item")))
     price = _num(a.get("price"), None)
     if price is None and base:
@@ -250,7 +254,8 @@ def _card_from_add(a, history_refs, transcript):
         "unit": base.get("unit") or (a.get("unit") if a.get("unit") in UNITS else "each"),
         "storage": a.get("storage") if a.get("storage") in STORAGE else "Fridge",
         "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
-        "product": a.get("product") or base.get("product", ""), "brand": "",
+        "product": a.get("product") or base.get("product", ""), "brand": a.get("brand") or "",
+        "said_name": a.get("said_name") or "",
         "units": _num(a.get("units"), None) or _num(base.get("units"), 1.0),
         "price": price, "packaged": a.get("packaged", True) is not False,
         "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",

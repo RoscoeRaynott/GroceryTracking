@@ -4,6 +4,7 @@ import streamlit as st
 
 from grocery import photos, productinfo, records, sheets
 from grocery.gemini import GeminiError
+from grocery.views import product_ui
 from grocery.views.common import back_home
 
 
@@ -24,6 +25,10 @@ def render():
 
 def _fill(p):
     pid = p["product_id"]
+    with st.container(horizontal=True, vertical_alignment="center"):
+        product_ui.photo(p, p.get("emoji", ""), width=56)
+        st.markdown(f"**{p['name']}**")
+    product_ui.nicknames(p, f"ni_nick_{pid}")
     found = st.session_state.get(f"ni_found_{pid}")
     if found:
         _confirm(p, found)
@@ -41,6 +46,8 @@ def _fill(p):
                     try:
                         info = productinfo.read_label(sheets.get_settings()["model_labels"],
                                                       [ph["data"] for ph in queue[-3:]])
+                        if not p.get("photo_url"):
+                            info["photo_url"] = productinfo.thumbnail(queue[-3:][0]["data"])
                         _found(pid, info)
                     except GeminiError as ex:
                         st.error(f"Couldn't read the label: {ex}")
@@ -94,6 +101,8 @@ def _confirm(p, info):
     pid = p["product_id"]
     sure = info["source"] == "Label photo"
     st.markdown(f"**{'Read from your label' if sure else 'Possible match, is this right?'}**")
+    if info.get("photo_url"):
+        st.image(info["photo_url"], width=120)
     st.markdown(f"{info.get('brand', '')} **{info.get('name', '')}**  \nFrom: {info['source']}")
     if info.get("reason"):
         st.caption(info["reason"])

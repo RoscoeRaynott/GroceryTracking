@@ -181,6 +181,7 @@ def web_lookup(model, query):
                     # The pages Google actually returned are reliable; a URL the model types itself may be made up.
                     sources[0][1] if sources else result.get("matched_url") or "", sources)
     info["no_label_info"] = not result.get("has_label_info") or not (info["ingredients"] or info["nutrients"])
+    info["photo_url"] = page_image(info["url"])
     info["reason"] = result.get("reason", "")
     return info
 
@@ -216,8 +217,8 @@ def _info(**fields):
 
 
 def product_columns(info):
-    """The products-tab columns this info fills in."""
-    return {
+    """The products-tab columns this info fills in (an empty photo never erases one already saved)."""
+    cols = {
         "serving_size": info.get("serving_size", ""),
         "servings_per_pack": info.get("servings_per_pack") or "",
         "ingredients": info.get("ingredients", ""),
@@ -228,6 +229,9 @@ def product_columns(info):
         "info_url": info.get("url", ""),
         "info_status": "confirmed",
     }
+    if not cols["photo_url"]:
+        del cols["photo_url"]
+    return cols
 
 
 def summary(info):
@@ -262,3 +266,35 @@ def _norm(text):
 
 def _words(text):
     return {w for w in re.findall(r"[a-z0-9]+", str(text).lower()) if len(w) > 2}
+
+
+# ---------------------------------------------------------------- photos
+
+def thumbnail(jpeg, size=160):
+    """A tiny JPEG (a few KB) as a data URI, small enough to keep in a Sheet cell."""
+    import base64
+    img = Image.open(io.BytesIO(jpeg)).convert("RGB")
+    img.thumbnail((size, size))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=70)
+    return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
+def page_image(url):
+    """Best effort: the preview picture a web page declares (og:image). Many store sites block this."""
+    if not url:
+        return ""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel) AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0 Mobile Safari/537.36"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read(400_000).decode("utf-8", "replace")
+    except Exception:
+        return ""
+    for pattern in (r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+                    r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image'):
+        m = re.search(pattern, html, re.I)
+        if m and m.group(1).startswith("http"):
+            return m.group(1)
+    return ""

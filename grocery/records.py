@@ -122,6 +122,11 @@ def save_purchase(review, finished, draft_id, readings):
             new_products.append(row)
     sheets.append_rows("products", new_products)
     sheets.update_rows("products", "product_id", info_updates)
+    for card in review["items"]:
+        said = (card.get("said_name") or "").strip()
+        product = products.get((known[norm(card["item"])]["item_id"], norm(card["product"])))
+        if said and product and norm(said) not in (norm(product["name"]), norm(card["item"])):
+            add_nicknames(product["product_id"], [said])
 
     existing_batches = sheets.read_tab("batches")
     purchase_id = readable_id(f"{slug(store['name'], 20)}-{review['date']}",
@@ -265,6 +270,7 @@ def save_product_match(product_id, info):
     details = "; ".join(x for x in [product.get("details", ""), f"Matched online: {info.get('name', '')}"] if x)
     sheets.update_rows("products", "product_id", {product_id: {
         "info_status": "none", "info_source": "Web search", "info_url": info.get("url", ""), "details": details,
+        **({"photo_url": info["photo_url"]} if info.get("photo_url") else {}),
     }})
 
 
@@ -307,3 +313,42 @@ def delete_purchase(purchase_id):
     used_products = {b.get("product_id") for b in batches}
     sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products)
     sheets.remove_rows("items", lambda r: r.get("item_id") not in used_items)
+
+
+def products():
+    return sheets.read_tab("products")
+
+
+def nicknames(product):
+    return [n.strip() for n in str(product.get("nicknames", "")).split(";") if n.strip()]
+
+
+def add_nicknames(product_id, phrases):
+    p = next((p for p in products() if p["product_id"] == product_id), None)
+    if not p:
+        return
+    have = nicknames(p)
+    lowered = {norm(n) for n in have} | {norm(p["name"])}
+    for phrase in phrases:
+        phrase = re.sub(r"\s+", " ", str(phrase)).strip()
+        if phrase and norm(phrase) not in lowered:
+            have.append(phrase)
+            lowered.add(norm(phrase))
+    sheets.update_rows("products", "product_id", {product_id: {"nicknames": "; ".join(have)}})
+
+
+def remove_nickname(product_id, phrase):
+    p = next((p for p in products() if p["product_id"] == product_id), None)
+    if p:
+        keep = [n for n in nicknames(p) if norm(n) != norm(phrase)]
+        sheets.update_rows("products", "product_id", {product_id: {"nicknames": "; ".join(keep)}})
+
+
+def set_photo(product_id, photo):
+    sheets.update_rows("products", "product_id", {product_id: {"photo_url": photo}})
+
+
+def products_prompt_lines(limit=80):
+    """Known products with nicknames, for the voice AI: ref | item | product | nicknames."""
+    rows = sorted(products(), key=lambda p: p.get("created_at", ""), reverse=True)[:limit]
+    return {f"p{n}": p for n, p in enumerate(rows, start=1)}
