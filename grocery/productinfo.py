@@ -86,8 +86,9 @@ Return only JSON, no other text:
   "image_url": the direct URL of the product's main photo if you saw one, else "",
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
   "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "12 oz", "2 x 1 gal"), or "",
-  "pack_in_unit": how many {unit} are in ONE pack, converting if needed (12 oz = 0.75 lb;
-                  "2 x 1 gal" = 2 gal), or null if it can't be expressed in {unit},
+  "pack_in_unit": how many {unit} are in ONE pack as sold, ALWAYS converting to {unit} (12 oz = 0.75 lb;
+                  "2 x 1 gal" = 2 gal; "6 x 16 fl oz" = 2839 ml; "32 fl oz" = 946 ml), or null only
+                  if it truly can't be expressed in {unit},
   "reason": one sentence on what you found or why not,
   "info": {shape}
 }}"""
