@@ -76,8 +76,9 @@ def _lookup(pid, fetch, barcode=""):
     with st.spinner("Looking it up…"):
         try:
             _found(pid, fetch(), barcode)
-        except productinfo.NotFound:
-            st.warning("Couldn't find this exact product. Try the label photo.")
+        except productinfo.NotFound as ex:
+            reason = str(ex) if str(ex) and " " in str(ex) else ""
+            st.warning(f"Couldn't find this exact product. {reason} Try editing the search text, or the label photo.")
         except GeminiError as ex:
             st.error(f"Search failed: {ex}")
         except Exception as ex:
@@ -94,6 +95,23 @@ def _confirm(p, info):
     sure = info["source"] == "Label photo"
     st.markdown(f"**{'Read from your label' if sure else 'Possible match, is this right?'}**")
     st.markdown(f"{info.get('brand', '')} **{info.get('name', '')}**  \nFrom: {info['source']}")
+    if info.get("reason"):
+        st.caption(info["reason"])
+    if info.get("url"):
+        st.markdown(f"[Open product page]({info['url']})")
+    if info.get("no_label_info"):
+        st.info("Found the product, but its page lists no ingredients or Nutrition Facts "
+                "(common for raw meat, fish and produce).")
+        with st.container(horizontal=True):
+            if st.button("Yes, that's it", key=f"ni_yes_{pid}", type="primary"):
+                records.save_product_match(pid, info)
+                del st.session_state[f"ni_found_{pid}"]
+                st.toast(f"Saved: {info.get('name') or p['name']}")
+                st.rerun()
+            if st.button("Not this", key=f"ni_no_{pid}"):
+                del st.session_state[f"ni_found_{pid}"]
+                st.rerun()
+        return
     for line in productinfo.summary(info):
         st.caption(line)
     if info.get("ingredients"):
@@ -102,8 +120,6 @@ def _confirm(p, info):
         st.warning("No ingredients list in this result.")
     for title, url in info.get("sources", [])[:3]:
         st.markdown(f"- [{title or 'source'}]({url})")
-    if info.get("url") and not info.get("sources"):
-        st.markdown(f"[Open source page]({info['url']})")
 
     with st.container(horizontal=True):
         if st.button("Yes, save it", key=f"ni_yes_{pid}", type="primary"):

@@ -70,13 +70,22 @@ visible; use null for anything you cannot read. Return only JSON:
 SEARCH_PROMPT = """Find the official ingredients list and Nutrition Facts for this exact US grocery
 product. Everything the user told us about it:
   {query}
-Use Google Search with ALL of these details (store, pack size, cut, variety), not a generic search.
-Prefer the store's own product page (e.g. costco.com / costcobusinessdelivery.com, walmart.com) or
-the maker's page. It must be this exact product; if you cannot find it, set "found" to false.
-Never fill in values from a different product. Raw single-ingredient meat, fish and produce often
-have no ingredients list or Nutrition Facts; then set "found" to false.
+Step 1: find the exact product. Search Google with ALL of these details (store, pack size, cut,
+variety), not a generic search. Costco and Costco Business Center sell the same products, so check
+costco.com and costcobusinessdelivery.com; for other stores use their own site or the maker's page.
+The user's words may be informal or regional, so match on store, pack size and cut rather than exact
+wording (e.g. in South Asian usage "mutton" usually means goat meat).
+Step 2: read that product page (or the maker's page) for its ingredients list and Nutrition Facts.
+Raw single-ingredient meat, fish and produce often list none; that is fine, just leave them empty.
+Never fill in values from a different product.
 Return only JSON, no other text:
-{shape}"""
+{{
+  "product_found": true if you found this exact product,
+  "matched_name": the product's full name as listed, "matched_url": its product page URL,
+  "has_label_info": true only if you found its ingredients or Nutrition Facts,
+  "reason": one sentence on what you found or why not,
+  "info": {shape}
+}}"""
 
 
 class NotFound(Exception):
@@ -166,9 +175,13 @@ def web_lookup(model, query):
     """query = everything known about the product (brand, name, size, store, what was said)."""
     prompt = SEARCH_PROMPT.format(query=query, shape=INFO_SHAPE)
     result, sources = gemini.search_json("product_web_lookup", model, prompt)
-    if not result.get("found"):
-        raise NotFound(query)
-    return _from_ai(result, "Web search", sources[0][1] if sources else "", sources)
+    if not result.get("product_found"):
+        raise NotFound(result.get("reason") or "No exact match found.")
+    info = _from_ai(dict(result.get("info") or {}, name=result.get("matched_name") or ""), "Web search",
+                    result.get("matched_url") or (sources[0][1] if sources else ""), sources)
+    info["no_label_info"] = not result.get("has_label_info") or not (info["ingredients"] or info["nutrients"])
+    info["reason"] = result.get("reason", "")
+    return info
 
 
 def read_label(model, jpegs):
