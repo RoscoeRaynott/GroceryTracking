@@ -374,6 +374,12 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Barcode: live scanning.** Point the camera; each barcode beeps, vibrates and is added, then scanning continues for the next item.
   - Uses Chrome's built-in barcode reader on Android, else the bundled open-source ZXing library (Apache-2.0, `grocery/camera/`).
 - **Receipt: in-app camera** with a big shutter button. Each photo is read right away, as before.
+- **Barcode mode is one screen, like Say it.** Each scan becomes a card at once:
+  - A known product brings its last price, pack size and storage.
+  - A new one gets its name and size from Open Food Facts plus one AI call for item, unit and storage.
+  - An unknown one gets an empty card, filled by voice or text.
+  - Scanning the same barcode again adds another pack.
+  - The "Missed something?" mic and Save/Discard are on the same screen.
 - Gallery pickers stay available under "Or pick … from your gallery".
 
 ## Design principle: visual first (user rule, applies everywhere)

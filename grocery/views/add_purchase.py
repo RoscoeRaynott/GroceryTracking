@@ -28,14 +28,19 @@ def render():
 
     key = STATES[mode]
     state = st.session_state.setdefault(key, _fresh(key))
-    {"photos": _photos_step, "questions": _questions_step, "scan": _scan_step, "speak": _speak_step,
+    {"photos": _photos_step, "questions": _questions_step, "speak": _speak_step,
      "review": _review_step, "saved": _saved_step}[state["stage"]](state)
 
 
 def _fresh(key):
-    return {"k": key, "stage": {"ap": "photos", "bc": "scan", "vc": "speak"}[key],
-            "draft_id": f"D-{uuid.uuid4().hex[:8]}" if key == "ap" else "", "readings": [],
-            "merged": [], "questions": [], "scans": [], "review": None, "interpretation": None}
+    state = {"k": key, "stage": {"ap": "photos", "bc": "review", "vc": "speak"}[key],
+             "draft_id": f"D-{uuid.uuid4().hex[:8]}" if key == "ap" else "", "readings": [],
+             "merged": [], "questions": [], "review": None, "interpretation": None}
+    if key == "bc":
+        # Barcode: one screen. Each scan becomes a card straight away.
+        state["review"] = {"store": records.last_store(), "date": timeutil.now().date(), "time": "",
+                           "source": "barcode", "total_paid": 0.0, "tax": None, "items": [], "skipped": []}
+    return state
 
 
 def _reset(state):
@@ -130,75 +135,75 @@ def _offer_resume(state):
 
 # ---------------------------------------------------------------- barcode scans
 
-def _scan_step(state):
-    state["store"] = st.text_input("Store", value=state.get("store") or records.last_store(), key="bc_store_in")
-    st.caption(f"Date: today ({timeutil.now():%b %d}). You'll enter prices on the next screen.")
+def _scanner(state, review):
+    """Camera, gallery and typed digits; every barcode becomes a review card at once."""
+    codes = []
     code = camera.barcodes("bc_cam", "Scan barcodes")
     if code:
-        _add_scan(state, code)
+        codes.append(code)
     with st.expander("Or pick barcode photos from your gallery"):
         photos.pick_photos("barcode_queue", "Tap to add barcode photos",
                            "One item per photo. Fill most of the photo with the barcode.")
-
-    queue = st.session_state.get("barcode_queue", [])
-    for photo in queue:
-        if photo.get("done"):
-            continue
-        photo["done"] = True
-        code = productinfo.read_barcode(photo["data"])
-        if not code:
-            st.warning("No barcode found in that photo. Try again closer and steadier, or type the digits below.")
-            continue
-        _add_scan(state, code)
-
-    with st.expander("Type barcode digits instead"):
-        digits = st.text_input("Barcode digits", key="bc_digits")
-        if st.button("Look up", key="bc_lookup") and digits.strip().isdigit():
-            _add_scan(state, digits.strip())
-
-    if not state["scans"]:
-        return
-    st.subheader(f"Scanned ({len(state['scans'])})")
-    for sc in list(state["scans"]):
-        with st.container(border=True):
-            if sc["name"]:
-                st.markdown(f"**{sc['name']}**  \n{sc['brand'] or ''} {sc.get('quantity') or ''}")
+    for photo in st.session_state.get("barcode_queue", []):
+        if not photo.get("done"):
+            photo["done"] = True
+            found = productinfo.read_barcode(photo["data"])
+            if found:
+                codes.append(found)
             else:
-                sc["name"] = st.text_input("Not found online. What is it?", key=f"bc_name_{sc['uid']}",
-                                           placeholder="e.g. Kirkland Italian Chicken Sausage")
-            st.caption(f"{sc['status']} · barcode {sc['barcode']}")
-            if st.button("Remove", key=f"bc_rm_{sc['uid']}", type="tertiary"):
-                state["scans"].remove(sc)
-                st.rerun()
-
-    ready = all(sc["name"].strip() for sc in state["scans"]) and state["store"].strip()
-    if st.button("Done scanning", type="primary", width="stretch", disabled=not ready):
-        state["stage"], state["review"] = "review", None
+                st.warning("No barcode found in that photo. Try closer, or type the digits.")
+    with st.expander("Or type barcode digits"):
+        digits = st.text_input("Barcode digits", key="bc_digits")
+        if st.button("Add", key="bc_lookup") and digits.strip().isdigit():
+            codes.append(digits.strip())
+    for code in codes:
+        _add_barcode(review, code)
+    if codes:
         st.rerun()
-    if not ready:
-        st.caption("Fill in the store and any unknown product names to continue.")
 
 
-def _add_scan(state, code):
-    sc = {"uid": uuid.uuid4().hex[:8], "barcode": code, "info": None, "name": "", "brand": "", "quantity": ""}
-    known = records.product_by_barcode(code)
-    if known:
-        sc.update(name=known["name"], brand=known.get("brand", ""), status="Already in your products")
+def _add_barcode(review, code):
+    """Same card as Say it: known products bring their last price, pack size and storage."""
+    same = next((c for c in review["items"] if c.get("barcode") == code), None)
+    if same:  # scanned the same thing again: one more pack
+        same["units"] = float(same["units"]) + float(same.get("pack_units") or same["units"] or 1)
+        st.session_state.setdefault("bc_pending", {})[f"it_{same['uid']}_units"] = same["units"]
+        st.toast(f"One more {same['item'] or 'item'}: {same['units']:g} {same['unit']}")
+        return
+
+    product = records.product_by_barcode(code)
+    if product:
+        a = {"item": product.get("item", ""), "product": product["name"], "brand": product.get("brand", ""),
+             "units": None, "price": None}
+        card = _card_from_add(a, {}, "")
+        card.update(barcode=code, receipt_text=f"barcode {code} · in your products")
     else:
-        with st.spinner("Looking it up on Open Food Facts…"):
+        info = None
+        with st.spinner("Looking it up…"):
             try:
                 info = productinfo.off_by_barcode(code)
-                sc.update(info=info, name=info["name"], brand=info["brand"], quantity=info.get("quantity", ""),
-                          status="Found on Open Food Facts")
-            except productinfo.NotFound:
-                sc["status"] = "Not on Open Food Facts; you can add its label later from Needs info"
-            except Exception as ex:
-                sc["status"] = f"Lookup failed ({type(ex).__name__}); you can add its label later"
-    state["scans"].append(sc)
-
-
-def _scan_text(sc):
-    return " ".join(x for x in [sc.get("brand"), sc.get("name"), sc.get("quantity")] if x)
+            except Exception:
+                info = None
+            if info:
+                line = " ".join(x for x in [info["brand"], info["name"], info.get("quantity")] if x)
+                try:
+                    result = receipts.interpret(sheets.get_settings()["model_receipts"], review["store"],
+                                                "barcode scan", [{"text": line, "kind": "item", "amount": None}],
+                                                records.items())
+                    it = (result.get("items") or [{}])[0]
+                except GeminiError:
+                    it = {"item": info["name"], "product": info["name"]}
+                card = _card_from_add(dict(it, product=info["name"], brand=info["brand"], price=None), {}, "")
+                card.update(info=info, packaged=True,
+                            receipt_text=f"barcode {code} · Open Food Facts: {info.get('quantity') or 'size unknown'}")
+            else:
+                card = _blank_card("", None)
+                card.update(note="Not found online. Say or type what it is.", receipt_text=f"barcode {code}")
+        card["barcode"] = code
+    card["pack_units"] = card["units"]
+    if card["price"] is None:
+        card.update(unclear=True, note=card.get("note") or "Enter the price you paid.")
+    review["items"].append(card)
 
 
 # ---------------------------------------------------------------- say it
@@ -438,6 +443,13 @@ def _review_step(state):
         st.warning(f"Looks like a receipt you already saved: {dup['store']}, {dup['purchased_on']}, "
                    f"${dup['receipt_total']}. Save only if this is a different purchase.")
 
+    if k == "bc":
+        for key in st.session_state.pop("bc_pending", {}):
+            st.session_state.pop(key, None)
+        _scanner(state, review)
+        if not review["items"]:
+            st.caption("Scan a barcode to start. Each item appears here with its usual size and price.")
+            return
     _refine_mic(state, review)
     _pack_lookup(state, review)
     cards = review["items"]
@@ -476,8 +488,8 @@ def _review_step(state):
             records.discard_draft(state["draft_id"])
         _reset(state)
         st.rerun()
-    back = {"ap": ("Back to photos", "photos"), "bc": ("Back to scanning", "scan"), "vc": ("Say it again", "speak")}[k]
-    if st.button(back[0], type="tertiary"):
+    back = {"ap": ("Back to photos", "photos"), "vc": ("Say it again", "speak")}.get(k)
+    if back and st.button(back[0], type="tertiary"):
         state["stage"], state["review"] = back[1], None
         st.rerun()
 
@@ -486,10 +498,6 @@ def _build_review(state):
     model = sheets.get_settings()["model_receipts"]
     if state["k"] == "ap":
         info = receipts.summarize([r["reading"] for r in state["readings"]])
-    else:
-        info = {"store": state.get("store", ""), "source_type": "barcode scans",
-                "date": timeutil.today_str(), "time": "", "total_paid": None, "tax": None}
-        state["merged"] = [{"text": _scan_text(sc), "kind": "item", "amount": None} for sc in state["scans"]]
     with st.spinner("Working out the items…"):
         try:
             result = receipts.interpret(model, info["store"], info["source_type"],
@@ -524,15 +532,6 @@ def _build_review(state):
             "receipt_text": " / ".join(str(merged[i].get("text", "")) for i in it.get("lines", [])
                                        if isinstance(i, int) and 0 <= i < len(merged)),
         })
-        if state["k"] == "bc":
-            scan = next((state["scans"][i] for i in it.get("lines", [])
-                         if isinstance(i, int) and 0 <= i < len(state["scans"])), None)
-            if scan:
-                cards[-1].update(barcode=scan["barcode"], info=scan.get("info"), packaged=True,
-                                 product=scan.get("name") or cards[-1]["product"],
-                                 brand=scan.get("brand") or cards[-1]["brand"])
-            if cards[-1]["price"] is None:
-                cards[-1].update(unclear=True, note="Enter the price you paid.")
     skipped = []
     for s in result.get("skipped", []):
         lines = [merged[i] for i in s.get("lines", []) if isinstance(i, int) and 0 <= i < len(merged)]
