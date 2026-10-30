@@ -28,9 +28,10 @@ def apply(actions, said, source):
     """actions: [{"type": waste|finish|expiry|delete, "batch": batch row, ...}]. Returns change_id."""
     if not actions:
         return None
-    change_id = records.new_id("C")
     now = timeutil.now_str()
     events = all_events()
+    taken = {e.get("event_id") for e in events} | {e.get("change_id") for e in events}
+    change_id = records.readable_id(f"change-{timeutil.now():%Y-%m-%d-%H%M}", taken)
     batch_changes, new_events, previous = {}, [], {}
 
     def event(batch, kind, **fields):
@@ -41,7 +42,7 @@ def apply(actions, said, source):
         else:
             prev = ""
         new_events.append(dict({
-            "event_id": records.new_id("E"), "change_id": change_id, "batch_id": bid,
+            "event_id": records.readable_id(f"{bid}-{kind}", taken), "change_id": change_id, "batch_id": bid,
             "item": batch.get("item", ""), "type": kind, "recorded_at": now, "source": source,
             "said": said, "previous": prev, "undone": False,
         }, **fields))

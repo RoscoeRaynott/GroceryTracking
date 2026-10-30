@@ -330,6 +330,15 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Recent purchases (last 20) with Delete.** Delete **erases** the purchase completely: its batches, their events, its AI readings, and any item, product, or store nothing else uses. Meant for test entries.
   - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
 
+## Sheet layout v2 (decided)
+
+- **No stores or purchases tabs.** The store name and receipt info (purchase_id, time, source, receipt total) live on each **batches** row. Rows from the same receipt share a purchase_id.
+- AI tabs stay visible (no hiding).
+- **Readable IDs**, like company email addresses: first come gets the clean name, later duplicates get -2, -3 …
+  - Item `goat-meat`, product `thomas-farms-goat-cubes-15-lb`, batch `goat-meat-2026-10-28`, purchase `costco-2026-10-28`, event `goat-meat-2026-10-28-wasted`, change `change-2026-10-30-1432`.
+  - IDs never change, even if a name is edited later.
+- Old test data: the user deletes it via History & undo, then removes the old "stores" and "purchases" tabs by hand.
+
 ## Future: one central voice button (user request)
 
 - Eventually **one big voice button**. The user just talks, and the AI works out the intent:

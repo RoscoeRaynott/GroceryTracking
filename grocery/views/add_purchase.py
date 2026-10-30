@@ -284,7 +284,7 @@ def _review_step(state):
     k = state["k"]
     st.subheader("Review")
     review["store"] = st.text_input("Store", value=review["store"], key=f"{k}_store",
-                                    help="Known stores: " + ", ".join(s["name"] for s in records.stores()) or None)
+                                    help="Known stores: " + (", ".join(records.stores()) or "none yet"))
     review["date"] = st.date_input("Date", value=review["date"], key=f"{k}_date", format="MM/DD/YYYY")
     if k == "ap":
         review["total_paid"] = st.number_input("Total paid on receipt ($)", value=review["total_paid"],
@@ -292,8 +292,8 @@ def _review_step(state):
 
     dup = records.find_duplicate_purchase(review["store"], review["date"].isoformat(), review["total_paid"])
     if dup and k == "ap":
-        st.warning(f"Looks like a receipt you already saved: {dup['store']}, {dup['purchased_at']}, "
-                   f"${dup['total_paid']}. Save only if this is a different purchase.")
+        st.warning(f"Looks like a receipt you already saved: {dup['store']}, {dup['purchased_on']}, "
+                   f"${dup['receipt_total']}. Save only if this is a different purchase.")
 
     cards = review["items"]
     _price_check(review)

@@ -6,14 +6,27 @@ import uuid
 
 from grocery import productinfo, sheets, timeutil
 
-CHAINS = {
-    "costco", "walmart", "safeway", "kroger", "h-e-b", "heb", "target", "trader joe's",
-    "whole foods", "sam's club", "aldi", "randalls", "fiesta", "sprouts", "instacart",
-}
-
-
 def new_id(prefix):
+    """A random id, only for temporary rows (drafts)."""
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+def slug(text, limit=40):
+    s = re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-")
+    return s[:limit].rstrip("-") or "x"
+
+
+def readable_id(base, taken):
+    """Like company email addresses: the first gets the clean name, later ones -2, -3 …"""
+    candidate, n = base, 2
+    while candidate in taken:
+        candidate, n = f"{base}-{n}", n + 1
+    taken.add(candidate)
+    return candidate
+
+
+def taken_ids(tab, col):
+    return {r.get(col) for r in sheets.read_tab(tab)}
 
 
 def norm(text):
@@ -25,7 +38,12 @@ def items():
 
 
 def stores():
-    return sheets.read_tab("stores")
+    """Distinct store names seen so far."""
+    names = []
+    for b in sheets.read_tab("batches"):
+        if b.get("store") and b["store"] not in names:
+            names.append(b["store"])
+    return names
 
 
 def open_batches_by_item():
@@ -38,14 +56,14 @@ def open_batches_by_item():
 
 def find_duplicate_purchase(store, date, total):
     """An earlier purchase with the same store, date and total, if any."""
-    if not (store and date and total not in (None, "")):
+    if not (store and date and total not in (None, "", 0, 0.0)):
         return None
-    for p in sheets.read_tab("purchases"):
+    for p, _ in purchases():
         try:
-            same_total = abs(float(p.get("total_paid") or "nan") - float(total)) < 0.005
+            same_total = abs(float(p.get("receipt_total") or "nan") - float(total)) < 0.005
         except ValueError:
             same_total = False
-        if norm(p.get("store")) == norm(store) and str(p.get("purchased_at", "")).startswith(str(date)) and same_total:
+        if norm(p.get("store")) == norm(canonical_store(store)) and p.get("purchased_on") == str(date) and same_total:
             return p
     return None
 
@@ -58,20 +76,16 @@ def save_purchase(review, finished, draft_id, readings):
     readings = [(task, model, json-able reading)] kept in ai_readings
     """
     now = timeutil.now_str()
-    store_name = canonical_store(review["store"])
-
-    store = next((s for s in stores() if norm(s["name"]) == norm(store_name)), None)
-    if store is None:
-        store = {"store_id": new_id("S"), "name": store_name,
-                 "type": "chain" if norm(store_name) in CHAINS else "local", "created_at": now}
-        sheets.append_rows("stores", [store])
+    store = {"name": canonical_store(review["store"])}
 
     known = {norm(i["name"]): i for i in items()}
+    item_ids = taken_ids("items", "item_id")
     new_items = []
     for card in review["items"]:
         if norm(card["item"]) not in known:
             row = {
-                "item_id": new_id("I"), "name": card["item"].strip(), "kind": card["kind"],
+                "item_id": readable_id(slug(card["item"]), item_ids), "name": card["item"].strip(),
+                "kind": card["kind"],
                 "perishable": card["perishable"] if card["kind"] != "One-time" else False,
                 "unit": card["unit"], "storage": card["storage"], "emoji": card.get("emoji", ""),
                 "tracked": card["kind"] != "One-time", "created_at": now,
@@ -81,6 +95,7 @@ def save_purchase(review, finished, draft_id, readings):
     sheets.append_rows("items", new_items)
 
     existing_products = sheets.read_tab("products")
+    product_ids = {p["product_id"] for p in existing_products}
     products = {(p["item_id"], norm(p["name"])): p for p in existing_products}
     by_barcode = {p["barcode"]: p for p in existing_products if p.get("barcode")}
     new_products, info_updates = [], {}
@@ -94,7 +109,8 @@ def save_purchase(review, finished, draft_id, readings):
                 info_updates[found["product_id"]] = dict(productinfo.product_columns(card["info"]),
                                                          barcode=card.get("barcode", ""))
         elif card["product"].strip():
-            row = {"product_id": new_id("P"), "item_id": item["item_id"], "item": item["name"],
+            row = {"product_id": readable_id(slug(card["product"], 50), product_ids),
+                   "item_id": item["item_id"], "item": item["name"],
                    "brand": card.get("brand", ""), "name": card["product"].strip(),
                    "barcode": card.get("barcode", ""), "packaged": card.get("packaged", True),
                    "source": review["source"], "created_at": now,
@@ -107,23 +123,22 @@ def save_purchase(review, finished, draft_id, readings):
     sheets.append_rows("products", new_products)
     sheets.update_rows("products", "product_id", info_updates)
 
-    purchase_id = new_id("R")
-    purchased_at = f"{review['date']} {review['time']}".strip()
-    sheets.append_rows("purchases", [{
-        "purchase_id": purchase_id, "store_id": store["store_id"], "store": store["name"],
-        "purchased_at": purchased_at, "source": review["source"], "items": len(review["items"]),
-        "total_paid": review.get("total_paid", ""), "created_at": now,
-    }])
-
+    existing_batches = sheets.read_tab("batches")
+    purchase_id = readable_id(f"{slug(store['name'], 20)}-{review['date']}",
+                              {b.get("purchase_id") for b in existing_batches})
+    batch_ids = {b.get("batch_id") for b in existing_batches}
     batches = []
     for card in review["items"]:
         item = known[norm(card["item"])]
         product = products.get((item["item_id"], norm(card["product"])), {})
         batches.append({
-            "batch_id": new_id("B"), "purchase_id": purchase_id, "item_id": item["item_id"],
+            "batch_id": readable_id(f"{item['item_id']}-{review['date']}", batch_ids),
+            "purchase_id": purchase_id, "item_id": item["item_id"],
             "item": item["name"], "product_id": product.get("product_id", ""),
             "product": product.get("name", ""), "store": store["name"], "purchased_on": review["date"],
+            "purchased_time": review.get("time", ""), "source": review["source"],
             "units": card["units"], "unit": card["unit"], "price_paid": card["price"],
+            "receipt_total": review.get("total_paid", ""),
             "status": "open" if card["kind"] != "One-time" else "not tracked", "created_at": now,
         })
     sheets.append_rows("batches", batches)
@@ -138,9 +153,11 @@ def save_purchase(review, finished, draft_id, readings):
             if b["batch_id"] not in new_ids
         ], said=f"Finished when restocking at {store['name']}", source="receipt review")
 
+    reading_ids = taken_ids("ai_readings", "reading_id")
     sheets.append_rows("ai_readings", [
-        {"reading_id": new_id("A"), "purchase_id": purchase_id, "store": store["name"], "at": now,
-         "task": task, "model": model, "reading": json.dumps(data, ensure_ascii=False)}
+        {"reading_id": readable_id(f"{purchase_id}-{slug(task)}", reading_ids), "purchase_id": purchase_id,
+         "store": store["name"], "at": now, "task": task, "model": model,
+         "reading": json.dumps(data, ensure_ascii=False)}
         for task, model, data in readings
     ])
     if draft_id:
@@ -211,7 +228,7 @@ def product_by_barcode(barcode):
 
 
 def last_store():
-    rows = sheets.read_tab("purchases")
+    rows = sheets.read_tab("batches")
     return rows[-1]["store"] if rows else ""
 
 
@@ -257,26 +274,36 @@ def canonical_store(name):
     return "Costco" if "costco" in name.lower() else name
 
 
+def purchases():
+    """Purchases rebuilt from batches: [(summary dict, [batch rows])], newest first."""
+    groups = {}
+    for b in sheets.read_tab("batches"):
+        groups.setdefault(b.get("purchase_id"), []).append(b)
+    out = []
+    for pid, rows in groups.items():
+        first = rows[0]
+        out.append(({
+            "purchase_id": pid, "store": first.get("store", ""), "purchased_on": first.get("purchased_on", ""),
+            "purchased_time": first.get("purchased_time", ""), "source": first.get("source", ""),
+            "receipt_total": first.get("receipt_total", ""), "created_at": first.get("created_at", ""),
+        }, rows))
+    return sorted(out, key=lambda p: p[0]["created_at"], reverse=True)
+
+
 def recent_purchases(limit=20):
-    """Newest purchases with their batches: [(purchase row, [batch rows])]."""
-    batches = sheets.read_tab("batches")
-    rows = sorted(sheets.read_tab("purchases"), key=lambda p: p.get("created_at", ""), reverse=True)[:limit]
-    return [(p, [b for b in batches if b.get("purchase_id") == p["purchase_id"]]) for p in rows]
+    return purchases()[:limit]
 
 
 def delete_purchase(purchase_id):
     """Erase a purchase completely (for test entries): its batches, their events, its AI readings,
-    and any item, product or store that nothing else uses any more."""
+    and any item or product that nothing else uses any more."""
     batch_ids = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("purchase_id") == purchase_id}
     sheets.remove_rows("events", lambda r: r.get("batch_id") in batch_ids)
     sheets.remove_rows("batches", lambda r: r.get("purchase_id") == purchase_id)
-    sheets.remove_rows("purchases", lambda r: r.get("purchase_id") == purchase_id)
     sheets.remove_rows("ai_readings", lambda r: r.get("purchase_id") == purchase_id)
 
     batches = sheets.read_tab("batches")
     used_items = {b.get("item_id") for b in batches}
     used_products = {b.get("product_id") for b in batches}
-    used_stores = {p.get("store_id") for p in sheets.read_tab("purchases")}
     sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products)
     sheets.remove_rows("items", lambda r: r.get("item_id") not in used_items)
-    sheets.remove_rows("stores", lambda r: r.get("store_id") not in used_stores)
