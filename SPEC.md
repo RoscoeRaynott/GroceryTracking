@@ -313,6 +313,16 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Needs info**: a small link on Home ("N food products need info") opens the list. Each product can be filled by label photo, barcode, or web search (confirm first), or marked "no label".
 - **Every decision so far is provisional** until the user has tested with real receipts. Expect changes after real use.
 
+## Future: one central voice button (user request)
+
+- Eventually **one big voice button**. The user just talks, and the AI works out the intent:
+  - adding purchases
+  - updating (finished, wasted, expiry)
+  - deleting
+  - other
+- It **asks follow-up questions** when the user was vague or wasn't heard clearly.
+- For now, "Say it" (in Add purchase) and "Voice update" stay separate. They should share one voice engine so merging later is easy.
+
 ## Safeguards (decided)
 
 - **No password gate** for now. The app isn't shared with anyone.
