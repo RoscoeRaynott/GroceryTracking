@@ -298,6 +298,19 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Non-product lines** (bag fees, memberships, gift cards, deposits) are skipped automatically and listed as "Skipped" at the bottom of Review, with "Add back".
 - **New items**: the AI suggests name, kind, unit, storage, and perishable. The card is marked **New** with those fields open. Later purchases match automatically.
 
+## Phase 2 decisions (barcodes & product info)
+
+- **Single-item barcode scan**: ask the **price**. Store and date default to the entry day (date = today). Receipt scans don't need this.
+- **Ingredients only for things you eat or drink.** No ingredient info for shampoo, detergent, sprays, etc.
+- **Where food product info comes from**, in order (proposal pending confirmation):
+  1. Open Food Facts by barcode.
+  2. Open Food Facts by name, **only if the brand matches exactly**.
+  3. **Gemini with Google Search grounding**: web search for that exact brand + product, returning its sources. Shown as "possible match" for the user to confirm.
+  4. **Label photo (ingredients + nutrition facts)**: always the truth, overrides everything.
+- **USDA FoodData Central** for fresh produce nutrition: free API key, signed up later (Phase 5).
+- **Testing vs real receipts**: the user decides. Old receipts can be real (scanned a day or two late).
+  - Needs a way to throw away a test read and to delete a saved receipt (design pending).
+
 ## Safeguards (decided)
 
 - **No password gate** for now. The app isn't shared with anyone.
