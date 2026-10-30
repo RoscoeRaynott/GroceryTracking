@@ -163,7 +163,7 @@ def save_purchase(review, finished, draft_id, readings):
             "receipt_total": review.get("total_paid", ""),
             "expiry_date": card["expiry_date"].isoformat() if card.get("expiry_date") else "",
             "status": "open" if card["kind"] != "One-time" else "not tracked", "created_at": now,
-            "packs": card["packs"] if card.get("packs") is not None else "",
+            "packs": _packs_of(card, product),
         })
     sheets.append_rows("batches", batches)
 
@@ -187,6 +187,15 @@ def save_purchase(review, finished, draft_id, readings):
     if draft_id:
         sheets.delete_rows_where("drafts", draft_id=draft_id)
     return purchase_id, len(batches)
+
+
+def _packs_of(card, product):
+    """Packs as sold. An amount said in units ("1 gallon") of a product with a known pack size is
+    stored as its share of a pack, so a later pack-size lookup knows it was not "1 pack"."""
+    if card.get("packs") is not None:
+        return card["packs"]
+    size = _float(product.get("pack_size"))
+    return round(float(card["units"]) / size, 6) if size and card.get("units") else ""
 
 
 def save_draft(draft_id, photo_no, photo_name, model, reading):
@@ -223,7 +232,8 @@ def products_needing_info():
     """Packaged products still missing something, newest first.
 
     Each gets "missing": "size" when it was only ever counted in packs (or saved as 1) with no known
-    pack size, "ingredients" for foods with no label info yet.
+    pack size, "update" when the pack size is known but purchases still need it applied (with
+    "resize" = [(batch, new units)]), "ingredients" for foods with no label info yet.
     """
     tracked = {i["item_id"]: i for i in items() if i.get("kind") in ("Food", "Household")}
     batches = sheets.read_tab("batches")
@@ -236,11 +246,14 @@ def products_needing_info():
         mine = [b for b in batches if b.get("product_id") == p["product_id"]]
         if not p.get("pack_size") and mine and all(_waiting_for_pack_size(b) for b in mine):
             missing.append("size")
+        resize = _to_resize(mine, _float(p.get("pack_size")), p.get("pack_unit"))
+        if resize:
+            missing.append("update")  # pack size known, but some purchases still say "1"
         if (item.get("kind") == "Food" and p.get("info_status") not in ("confirmed", "none")
                 and not p.get("ingredients")):
             missing.append("ingredients")
         if missing:
-            out.append(dict(p, emoji=item.get("emoji", ""), missing=missing, item_row=item))
+            out.append(dict(p, emoji=item.get("emoji", ""), missing=missing, item_row=item, resize=resize))
     return sorted(out, key=lambda p: p.get("created_at", ""), reverse=True)
 
 
@@ -415,16 +428,45 @@ def _waiting_for_pack_size(batch):
     return units == packs if packs is not None else units in (None, 1.0)
 
 
+def _to_resize(batches, pack_size, unit):
+    """[(batch, new units)] for purchases still waiting for this pack size, where it changes something."""
+    if not pack_size:
+        return []
+    out = []
+    for b in batches:
+        if _waiting_for_pack_size(b):
+            new = (_float(b.get("packs")) or 1.0) * pack_size
+            if new != _float(b.get("units")) or (unit and unit != b.get("unit")):
+                out.append((b, new))
+    return out
+
+
 def apply_pack_size(product_id, pack_units, unit, fix_batches=True):
-    """Remember a product's pack size; purchases counted in packs become packs x pack size."""
+    """Remember a product's pack size; purchases counted in packs become packs x pack size.
+
+    Returns [(batch, new units)] for the purchases that changed. Pantry, Insights, lifespans and
+    prices are all worked out from these rows, so they follow automatically.
+    """
     sheets.update_rows("products", "product_id", {product_id: {"pack_size": pack_units, "pack_unit": unit}})
-    if fix_batches:
-        changes = {b["batch_id"]: {"units": (_float(b.get("packs")) or 1.0) * pack_units, "unit": unit}
-                   for b in sheets.read_tab("batches")
-                   if b.get("product_id") == product_id and _waiting_for_pack_size(b)}
-        sheets.update_rows("batches", "batch_id", changes)
-        return len(changes)
-    return 0
+    if not fix_batches:
+        return []
+    mine = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
+    resize = _to_resize(mine, pack_units, unit)
+    sheets.update_rows("batches", "batch_id", {
+        b["batch_id"]: {"units": new, "unit": unit or b.get("unit"),
+                        **({} if _float(b.get("packs")) is not None else {"packs": 1})}
+        for b, new in resize})
+    return resize
+
+
+def keep_amounts(product_id):
+    """The user says purchases saved as "1" are right as they are: record them as part of a pack."""
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
+    size = _float(product.get("pack_size"))
+    mine = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
+    sheets.update_rows("batches", "batch_id", {
+        b["batch_id"]: {"packs": round((_float(b.get("units")) or 0) / size, 6)}
+        for b, _ in _to_resize(mine, size, product.get("pack_unit"))})
 
 
 def item_unit(item_id):
@@ -462,3 +504,4 @@ def mark_size_ok(product_id):
     size = latest[-1].get("units") if latest else "1"
     unit = latest[-1].get("unit") if latest else "each"
     sheets.update_rows("products", "product_id", {product_id: {"pack_size": size or "1", "pack_unit": unit}})
+    keep_amounts(product_id)

@@ -8,10 +8,14 @@ from grocery.views import product_ui
 from grocery.views.common import back_home
 
 
+TAGS = {"size": "📏", "update": "🔄", "ingredients": "🧾"}
+
+
 def render():
     back_home()
     st.title("Needs info")
-    st.caption("📏 pack size · 🧾 ingredients & nutrition. Fill each once; it's remembered for every future purchase.")
+    st.caption("📏 pack size · 🔄 purchases to update · 🧾 ingredients & nutrition. "
+               "Fill each once; it's remembered for every future purchase.")
 
     products = records.products_needing_info()
     if not products:
@@ -19,7 +23,7 @@ def render():
         return
 
     for p in products:
-        tags = " ".join({"size": "📏", "ingredients": "🧾"}[m] for m in p["missing"])
+        tags = " ".join(TAGS[m] for m in p["missing"])
         with st.expander(f"{tags}  {p.get('emoji', '')} {p['name']}".strip()):
             _fill(p)
 
@@ -29,8 +33,12 @@ def _fill(p):
     with st.container(horizontal=True, vertical_alignment="center"):
         product_ui.photo(p, p.get("emoji", ""), width=56, item=p.get("item_row"))
         st.markdown(f"**{p['name']}**  \n" + " ".join(
-            {"size": ":orange-badge[pack size?]", "ingredients": ":orange-badge[ingredients?]"}[m]
+            {"size": ":orange-badge[pack size?]", "update": ":blue-badge[purchases to update]",
+             "ingredients": ":orange-badge[ingredients?]"}[m]
             for m in p["missing"]))
+    if "update" in p["missing"]:
+        _update_purchases(p)
+        return
     found = st.session_state.get(f"ni_found_{pid}")
     if found:
         _confirm(p, found)
@@ -86,6 +94,23 @@ def _fill(p):
         product_ui.nicknames(p, f"ni_nick_{pid}")
 
 
+def _update_purchases(p):
+    """The pack size is known but some purchases were saved before it: show the change, one tap."""
+    pid, unit = p["product_id"], p.get("pack_unit") or ""
+    st.markdown(f":blue-badge[1 pack = {float(p['pack_size']):,g} {unit}]")
+    for b, new in p["resize"]:
+        st.markdown(f"{b['purchased_on']} · {b.get('store', '')}: "
+                    f":red-badge[{b['units']} {b['unit']}] → :green-badge[{new:,g} {unit or b['unit']}]")
+    with st.container(horizontal=True):
+        if st.button("Update them", key=f"ni_upd_{pid}", type="primary", icon=":material/sync:"):
+            changed = records.apply_pack_size(pid, float(p["pack_size"]), unit)
+            st.toast(f"Updated {len(changed)} purchase(s) of {p['name']}")
+            st.rerun()
+        if st.button("They're right as they are", key=f"ni_keep_{pid}", type="tertiary"):
+            records.keep_amounts(pid)
+            st.rerun()
+
+
 def _lookup(pid, fetch, barcode=""):
     with st.spinner("Looking it up…"):
         try:
@@ -104,6 +129,26 @@ def _found(pid, info, barcode=""):
     st.rerun()
 
 
+def _pack_field(p, info):
+    """One pack's size, from the lookup when it found one; always editable before saving."""
+    pid = p["product_id"]
+    unit = info.get("pack_unit") or records.item_unit(p["item_id"])
+    known = records._float(info.get("pack_units")) or records._float(p.get("pack_size"))
+    if not known and "size" not in p["missing"]:
+        return
+    size = st.number_input(f"1 pack = how many {unit}?", value=known, min_value=0.0, step=1.0, format="%g",
+                           key=f"ni_pack_{pid}", placeholder=f"Type the {unit} in one pack")
+    if not info.get("pack_units") and info.get("pack_text"):
+        st.caption(f"The page says “{info['pack_text']}”, but no {unit} amount came back. Type it above.")
+    info["pack_units"], info["pack_unit"] = (size or None), unit
+    if size:
+        waiting = records._to_resize([b for b in sheets.read_tab("batches")
+                                      if b.get("product_id") == pid], size, unit)
+        if waiting:
+            st.caption("Also updates: " + ", ".join(f"{b['units']} {b['unit']} → {new:,g} {unit}"
+                                                    for b, new in waiting))
+
+
 def _confirm(p, info):
     pid = p["product_id"]
     sure = info["source"] == "Label photo"
@@ -118,6 +163,7 @@ def _confirm(p, info):
         st.markdown(f":blue-badge[pack: {info['pack_text']}{size}]")
     if info.get("url"):
         st.markdown(f"[Open the page it used]({info['url']})")
+    _pack_field(p, info)
     if info.get("no_label_info"):
         st.info("Found the product, but its page lists no ingredients or Nutrition Facts "
                 "(common for raw meat, fish and produce).")
@@ -154,8 +200,8 @@ def _confirm(p, info):
 
 
 def _apply_pack(pid, info):
-    """A found pack size fixes this product's purchases that were saved as just "1"."""
+    """A pack size fixes this product's purchases that were counted in packs or saved as just "1"."""
     if info.get("pack_units"):
         fixed = records.apply_pack_size(pid, info["pack_units"], info.get("pack_unit") or "each")
         if fixed:
-            st.toast(f"Pack size {info['pack_units']:g} {info.get('pack_unit')} applied to {fixed} purchase(s)")
+            st.toast(f"Pack size {info['pack_units']:g} {info.get('pack_unit')} applied to {len(fixed)} purchase(s)")

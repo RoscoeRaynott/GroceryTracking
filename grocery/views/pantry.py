@@ -44,7 +44,7 @@ def _row(r, product=None):
             usual = f" / ~{r['expected']:.0f}d" if r["expected"] else ""
             note = f" :{color}-badge[{r['reason']}]" if r["reason"] else ""
             st.markdown(f"**{b['item']}** :{color}-badge[{r['days_open']}d{usual}]{note}  \n"
-                        f":gray[{b.get('units', '')} {b.get('unit', '')} · {b.get('store', '')}]")
+                        f":gray[{_amount(b.get('units'))} {b.get('unit', '')} · {b.get('store', '')}]")
         with st.container(horizontal=True):
             if st.button("Finished", key=f"pf_{bid}", icon=":material/check:"):
                 events.apply([{"type": "finish", "batch": b}], said="Pantry: Finished", source="pantry")
@@ -86,3 +86,10 @@ def _went_bad(b):
         if st.button("Cancel", key=f"pwx_{bid}"):
             st.session_state.pop(f"pw_{bid}", None)
             st.rerun()
+
+
+def _amount(units):
+    try:
+        return f"{float(units):,g}"
+    except (TypeError, ValueError):
+        return units or ""
