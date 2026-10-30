@@ -83,6 +83,7 @@ Return only JSON, no other text:
 {{
   "product_found": true if you found this exact product,
   "matched_name": the product's full name as listed, "matched_url": its product page URL,
+  "image_url": the direct URL of the product's main photo if you saw one, else "",
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
   "reason": one sentence on what you found or why not,
   "info": {shape}
@@ -182,7 +183,7 @@ def web_lookup(model, query):
                     # The pages Google actually returned are reliable; a URL the model types itself may be made up.
                     sources[0][1] if sources else result.get("matched_url") or "", sources)
     info["no_label_info"] = not result.get("has_label_info") or not (info["ingredients"] or info["nutrients"])
-    info["photo_url"] = page_image(info["url"])
+    info["photo_url"] = page_image(info["url"]) or checked_image(result.get("image_url"))
     info["reason"] = result.get("reason", "")
     return info
 
@@ -279,6 +280,19 @@ def thumbnail(jpeg, size=160):
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=70)
     return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
+
+
+def checked_image(url):
+    """Use an image URL only if it really is an image (a URL the model typed may be made up)."""
+    if not url or not str(url).startswith("http"):
+        return ""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            ok = resp.status == 200 and resp.headers.get("Content-Type", "").startswith("image/")
+        return url if ok else ""
+    except Exception:
+        return ""
 
 
 def page_image(url):
