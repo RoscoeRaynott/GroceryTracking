@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from grocery import analytics, events, sheets
+from grocery.views import product_ui
 from grocery.views.common import back_home
 
 DOT = {"green": "🟢", "orange": "🟠", "red": "🔴"}
@@ -31,6 +32,20 @@ def render():
     summary = analytics.item_summary(pick["item_id"])
     _best_place(summary["best"], pick, cfg)
     _lifespan(summary, pick)
+    _products(pick)
+
+
+def _products(item):
+    rows = [p for p in sheets.read_tab("products") if p.get("item_id") == item["item_id"]]
+    if not rows:
+        return
+    st.subheader("Products", anchor=False)
+    for p in rows:
+        with st.container(border=True):
+            with st.container(horizontal=True, vertical_alignment="center"):
+                product_ui.photo(p, item.get("emoji", ""), width=56)
+                st.markdown(f"**{p['name']}**  \n:gray[{p.get('brand', '')}]")
+            product_ui.nicknames(p, f"ins_nick_{p['product_id']}")
 
 
 def _best_place(best, item, cfg):
