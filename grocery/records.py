@@ -94,6 +94,22 @@ def save_purchase(review, finished, draft_id, readings):
             known[norm(row["name"])] = {k: sheets._cell(v) for k, v in row.items()}
             new_items.append(row)
     sheets.append_rows("items", new_items)
+    # A known item kept somewhere new (e.g. "I keep raspberries in the freezer") updates the item.
+    item_changes, new_ids = {}, {r["item_id"] for r in new_items}
+    for card in review["items"]:
+        item = known[norm(card["item"])]
+        if item["item_id"] in new_ids or card["kind"] == "One-time":
+            continue
+        change = {}
+        if card.get("storage") and card["storage"] != item.get("storage"):
+            change["storage"] = card["storage"]
+        perishable = "yes" if card.get("perishable") else "no"
+        if item.get("perishable") and perishable != item["perishable"]:
+            change["perishable"] = perishable
+        if change:
+            item_changes[item["item_id"]] = change
+            item.update(change)
+    sheets.update_rows("items", "item_id", item_changes)
 
     existing_products = sheets.read_tab("products")
     product_ids = {p["product_id"] for p in existing_products}
@@ -145,6 +161,7 @@ def save_purchase(review, finished, draft_id, readings):
             "purchased_time": review.get("time", ""), "source": review["source"],
             "units": card["units"], "unit": card["unit"], "price_paid": card["price"],
             "receipt_total": review.get("total_paid", ""),
+            "expiry_date": card["expiry_date"].isoformat() if card.get("expiry_date") else "",
             "status": "open" if card["kind"] != "One-time" else "not tracked", "created_at": now,
         })
     sheets.append_rows("batches", batches)

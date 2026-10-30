@@ -282,7 +282,7 @@ def _refine_mic(state, review):
             st.error(f"Couldn't understand that: {ex}")
             return
 
-    pending = {}
+    pending, changed = {}, []
     if result.get("store"):
         review["store"] = result["store"]
         pending[f"{k}_store"] = result["store"]
@@ -296,19 +296,13 @@ def _refine_mic(state, review):
         if not isinstance(n, int) or not 0 <= n < len(cards):
             continue
         c = cards[n]
-        for field in ("item", "product"):
-            if u.get(field):
-                c[field] = str(u[field])
-                pending[f"it_{c['uid']}_{field}"] = c[field]
-        if _num(u.get("units"), None) is not None:
-            c["units"] = _num(u["units"], 1.0)
-            pending[f"it_{c['uid']}_units"] = c["units"]
-        if u.get("unit") in UNITS:
-            c["unit"] = u["unit"]
-            pending[f"it_{c['uid']}_unit"] = c["unit"]
-        if _num(u.get("price"), None) is not None:
-            c.update(price=_num(u["price"], None), unclear=False, note="")
-            pending[f"it_{c['uid']}_price"] = c["price"]
+        for field, value in _valid_changes(u).items():
+            c[field] = value
+            c.setdefault("user_set", set()).add(field)
+            pending[f"it_{c['uid']}_{WIDGET.get(field, field)}"] = value
+            changed.append(f"{c['item']}: {LABELS.get(field, field)} → {_show(value)}")
+            if field == "price":
+                c.update(unclear=False, note="")
     doomed = {n for n in result.get("removes", []) if isinstance(n, int)}
     review["items"] = [c for n, c in enumerate(cards) if n not in doomed]
     review["items"] += [_card_from_add(a, history_refs, result.get("transcript", ""))
@@ -316,8 +310,40 @@ def _refine_mic(state, review):
     # Widgets already drawn this run can't be changed now; reset them on the rerun.
     st.session_state[f"{k}_pending"] = pending
     st.session_state[f"{k}_ref_nonce"] = nonce + 1
-    st.toast(f"Updated: {result.get('transcript', '')}"[:120])
+    adds = [a.get("item", "") for a in result.get("adds", [])]
+    summary = changed + [f"Added {a}" for a in adds] + ([f"Store → {result['store']}"] if result.get("store") else []) \
+        + ([f"Date → {result['date']}"] if result.get("date") else [])
+    st.toast(("Updated: " + "; ".join(summary)) if summary else
+             f"Heard “{result.get('transcript', '')}” but nothing to change", icon="✅" if summary else "⚠️")
     st.rerun()
+
+
+WIDGET = {"perishable": "perish"}  # card field → its widget key suffix
+LABELS = {"storage": "kept in", "units": "quantity", "expiry_date": "expires", "perishable": "perishable"}
+
+
+def _valid_changes(u):
+    """Only well-formed values for the fields a review card has."""
+    out = {}
+    for field in ("item", "product", "brand"):
+        if isinstance(u.get(field), str) and u[field].strip():
+            out[field] = u[field].strip()
+    if _num(u.get("units"), None) is not None:
+        out["units"] = _num(u["units"], 1.0)
+    if _num(u.get("price"), None) is not None:
+        out["price"] = _num(u["price"], None)
+    for field, allowed in (("unit", UNITS), ("kind", KINDS), ("storage", STORAGE)):
+        if u.get(field) in allowed:
+            out[field] = u[field]
+    if isinstance(u.get("perishable"), bool):
+        out["perishable"] = u["perishable"]
+    if _parse_date(u.get("expiry_date") or ""):
+        out["expiry_date"] = _parse_date(u["expiry_date"])
+    return out
+
+
+def _show(value):
+    return "yes" if value is True else "no" if value is False else f"{value:g}" if isinstance(value, float) else str(value)
 
 
 # ---------------------------------------------------------------- overlap questions
@@ -491,6 +517,8 @@ def _card(c, review, known, open_by_item, open_fields):
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
         st.markdown(f"{title} · {_money(c['price'])}  \n{' '.join(badges)}")
         st.caption(f"{c['product'] or '—'} · {c['units']:g} {c['unit']} · receipt: “{c['receipt_text']}”")
+        if c.get("expiry_date"):
+            st.markdown(f":orange-badge[expires {c['expiry_date']:%b %d}]")
         if c["unclear"] and c["note"]:
             st.warning(c["note"])
 
@@ -512,10 +540,18 @@ def _card(c, review, known, open_by_item, open_fields):
                                                 key=f"it_{uid}_storage")
                     c["perishable"] = st.toggle("Perishable", value=c["perishable"], key=f"it_{uid}_perish")
             else:
-                c["kind"], c["unit"], c["storage"] = existing["kind"], existing["unit"], existing["storage"]
-                c["perishable"] = existing["perishable"] == "yes"
-                st.caption(f"Known item · {existing['kind']} · counted in {existing['unit']} · "
-                           f"{existing['storage']}")
+                user_set = c.get("user_set", set())
+                c["kind"], c["unit"] = existing["kind"], existing["unit"]
+                if "storage" not in user_set and not c.get("storage_seen"):
+                    c["storage"] = existing["storage"] if existing["storage"] in STORAGE else "Fridge"
+                if "perishable" not in user_set and not c.get("storage_seen"):
+                    c["perishable"] = existing["perishable"] == "yes"
+                c["storage_seen"] = True
+                st.caption(f"Known item · {existing['kind']} · counted in {existing['unit']}")
+                if existing["kind"] != "One-time":
+                    c["storage"] = st.selectbox("Kept in", STORAGE, index=STORAGE.index(c["storage"]),
+                                                key=f"it_{uid}_storage")
+                    c["perishable"] = st.toggle("Perishable", value=c["perishable"], key=f"it_{uid}_perish")
 
         if existing is not None and existing["item_id"] in open_by_item:
             last = max(open_by_item[existing["item_id"]], key=lambda b: b.get("purchased_on", ""))

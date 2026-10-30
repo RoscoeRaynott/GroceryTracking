@@ -321,6 +321,9 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Deleting by voice is allowed**, always previewed and undoable.
 - **Reporting waste closes the batch** (the wasted part went bad, the rest was eaten), unless the user says some is still left ("one avocado went bad, I still have the others").
 - **"Missed something?" mic on every review screen**: after the AI's first pass, speak or type what was missed or wrong (store, date, weight, price, another item, remove one). The cards update in place before saving.
+- **Voice fixes can change any field** of a card: item, product, brand, quantity, unit, price, kind, kept in (storage), perishable, expiry date, plus store and date.
+  - A storage or perishable change on a known item updates that item (e.g. raspberries → Freezer from now on).
+  - The confirmation lists exactly what changed, or warns that nothing did.
 - **Mic button**: one big round button. Tap to start, tap the red stop to finish, or press and hold (release stops). No waveform or timer.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 
