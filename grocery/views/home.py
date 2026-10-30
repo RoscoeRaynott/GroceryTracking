@@ -29,7 +29,7 @@ def render():
                     go("pantry")
         missing = len(records.products_needing_info())
         if missing:
-            label = f"{missing} food product{'s' if missing != 1 else ''} need{'s' if missing == 1 else ''} info"
+            label = f"{missing} product{'s' if missing != 1 else ''} need{'s' if missing == 1 else ''} info"
             if st.button(label, icon=":material/info:", type="tertiary"):
                 go("needs_info")
 

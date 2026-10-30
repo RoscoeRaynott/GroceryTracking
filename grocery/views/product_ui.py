@@ -40,15 +40,27 @@ def nicknames(product, key):
     typed = st.text_input("Nickname", key=f"{key}_txt_{nonce}", label_visibility="collapsed",
                           placeholder="or type: Costco egg whites; egg whites")
     add = st.button("Add nickname", key=f"{key}_add_{nonce}", disabled=not typed.strip())
-    new = []
+    heard = st.session_state.get(f"{key}_heard")
     if audio:
         try:
-            new = voice.nicknames_from_audio(audio, product["name"])
+            st.session_state[f"{key}_heard"] = voice.nicknames_from_audio(audio)
         except GeminiError as ex:
             st.error(f"Couldn't hear that: {ex}")
+        st.rerun()
+    new = []
+    if heard is not None:
+        # Show what was heard before saving, so a mishearing never sneaks in.
+        st.markdown("Heard: " + (" ".join(f":blue-badge[{n}]" for n in heard) or ":gray[nothing clear]"))
+        with st.container(horizontal=True):
+            if heard and st.button("Save these", key=f"{key}_ok", type="primary"):
+                new = heard
+            if st.button("Try again", key=f"{key}_again"):
+                st.session_state.pop(f"{key}_heard", None)
+                st.rerun()
     elif add:
         new = [t for t in typed.split(";")]
     if new:
+        st.session_state.pop(f"{key}_heard", None)
         records.add_nicknames(pid, new)
         st.session_state[f"{key}_nn"] = nonce + 1
         st.session_state[f"{key}_open"] = False
