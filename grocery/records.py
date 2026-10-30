@@ -240,3 +240,12 @@ def product_search_text(p):
     if p.get("details"):
         parts.append(f"({p['details']})")
     return " ".join(x for x in parts if x and x.strip())
+
+
+def save_product_match(product_id, info):
+    """The web found the exact product but no label info: remember the match, stop asking."""
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
+    details = "; ".join(x for x in [product.get("details", ""), f"Matched online: {info.get('name', '')}"] if x)
+    sheets.update_rows("products", "product_id", {product_id: {
+        "info_status": "none", "info_source": "Web search", "info_url": info.get("url", ""), "details": details,
+    }})
