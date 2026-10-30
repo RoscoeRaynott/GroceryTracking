@@ -247,7 +247,14 @@ def _card_from_add(a, history_refs, transcript):
     price = _num(a.get("price"), None)
     if price is None and base:
         price = _num(base.get("price_paid"), None)
+    units = _num(a.get("units"), None) or _num(base.get("units"), 1.0)
+    product = next((p for p in records.products()
+                    if records.norm(p["name"]) == records.norm(a.get("product") or base.get("product"))), {})
+    known_pack = _num(product.get("pack_size"), None)
+    if known_pack and units <= 1:
+        units = known_pack  # "I bought the eggs" = one full pack
     return {
+        "pack_checked": bool(known_pack),
         "uid": uuid.uuid4().hex[:8],
         "item": existing["name"] if existing else (a.get("item") or "").strip(),
         "kind": a.get("kind") if a.get("kind") in KINDS else "Food",
@@ -256,7 +263,7 @@ def _card_from_add(a, history_refs, transcript):
         "perishable": bool(a.get("perishable", True)), "emoji": a.get("emoji") or "",
         "product": a.get("product") or base.get("product", ""), "brand": a.get("brand") or "",
         "said_name": a.get("said_name") or "", "wiki": a.get("wiki") or "",
-        "units": _num(a.get("units"), None) or _num(base.get("units"), 1.0),
+        "units": units,
         "price": price, "packaged": a.get("packaged", True) is not False,
         "unclear": price is None, "note": "" if price is not None else "Enter the price you paid.",
         "receipt_text": f"said: {a.get('said') or transcript}",
@@ -315,6 +322,40 @@ def _refine_mic(state, review):
         + ([f"Date → {result['date']}"] if result.get("date") else [])
     st.toast(("Updated: " + "; ".join(summary)) if summary else
              f"Heard “{result.get('transcript', '')}” but nothing to change", icon="✅" if summary else "⚠️")
+    st.rerun()
+
+
+def _pack_lookup(state, review):
+    """New packaged items still counted as "1": look up the exact product online for its pack size."""
+    todo = [c for c in review["items"] if c.get("packaged") and not c.get("pack_checked")
+            and c["kind"] == "Food" and float(c["units"] or 1) <= 1 and c["product"].strip()]
+    if not todo:
+        return
+    k = state["k"]
+    label = f"Look up pack sizes online ({len(todo)})"
+    if not st.button(label, key=f"{k}_packs", icon=":material/travel_explore:"):
+        return
+    model = sheets.get_settings()["model_lookup"]
+    pending, found = st.session_state.setdefault(f"{k}_pending", {}), []
+    bar = st.progress(0.0)
+    for n, c in enumerate(todo, start=1):
+        bar.progress(n / len(todo), text=f"Searching for {c['product']}…")
+        c["pack_checked"] = True
+        query = " ".join(x for x in [c.get("brand"), c["product"], f"sold at {review['store']}"] if x)
+        try:
+            info = productinfo.web_lookup(model, query, c["unit"])
+        except (productinfo.NotFound, GeminiError):
+            continue
+        except Exception:
+            continue
+        c["info"] = info  # also saves its ingredients / nutrition when you save
+        if info.get("pack_units"):
+            c["units"] = info["pack_units"]
+            c["pack_note"] = info.get("pack_text", "")
+            pending[f"it_{c['uid']}_units"] = c["units"]
+            found.append(f"{c['item']}: {info['pack_units']:g} {c['unit']}")
+    st.toast(("Pack sizes: " + "; ".join(found)) if found else "No pack sizes found online",
+             icon="✅" if found else "⚠️")
     st.rerun()
 
 
@@ -390,6 +431,7 @@ def _review_step(state):
                    f"${dup['receipt_total']}. Save only if this is a different purchase.")
 
     _refine_mic(state, review)
+    _pack_lookup(state, review)
     cards = review["items"]
     _price_check(review)
 
@@ -517,6 +559,8 @@ def _card(c, review, known, open_by_item, open_fields):
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
         st.markdown(f"{title} · {_money(c['price'])}  \n{' '.join(badges)}")
         st.caption(f"{c['product'] or '—'} · {c['units']:g} {c['unit']} · receipt: “{c['receipt_text']}”")
+        if c.get("pack_note"):
+            st.markdown(f":blue-badge[pack from store site: {c['pack_note']}]")
         if c.get("expiry_date"):
             st.markdown(f":orange-badge[expires {c['expiry_date']:%b %d}]")
         if c["unclear"] and c["note"]:

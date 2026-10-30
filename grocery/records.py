@@ -394,3 +394,26 @@ def fill_missing_item_pictures(limit=3):
 
 def set_item_picture(item_id, url):
     sheets.update_rows("items", "item_id", {item_id: {"photo_url": url}})
+
+
+def apply_pack_size(product_id, pack_units, unit, fix_batches=True):
+    """Remember a product's pack size; purchases saved as just "1" of it become one full pack."""
+    sheets.update_rows("products", "product_id", {product_id: {"pack_size": pack_units, "pack_unit": unit}})
+    if fix_batches:
+        changes = {b["batch_id"]: {"units": pack_units, "unit": unit}
+                   for b in sheets.read_tab("batches")
+                   if b.get("product_id") == product_id and _float(b.get("units")) in (None, 1.0)}
+        sheets.update_rows("batches", "batch_id", changes)
+        return len(changes)
+    return 0
+
+
+def item_unit(item_id):
+    return next((i.get("unit") or "each" for i in items() if i["item_id"] == item_id), "each")
+
+
+def _float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

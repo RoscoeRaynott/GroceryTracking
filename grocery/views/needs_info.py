@@ -70,7 +70,8 @@ def _fill(p):
                 try:
                     return productinfo.off_by_name(p.get("brand", ""), p["name"])
                 except productinfo.NotFound:
-                    return productinfo.web_lookup(sheets.get_settings()["model_lookup"], query)
+                    return productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
+                                                  records.item_unit(p["item_id"]))
             _lookup(pid, search)
 
     st.divider()
@@ -106,6 +107,9 @@ def _confirm(p, info):
     st.markdown(f"{info.get('brand', '')} **{info.get('name', '')}**  \nFrom: {info['source']}")
     if info.get("reason"):
         st.caption(info["reason"])
+    if info.get("pack_text"):
+        size = f" = {info['pack_units']:g} {info['pack_unit']}" if info.get("pack_units") else ""
+        st.markdown(f":blue-badge[pack: {info['pack_text']}{size}]")
     if info.get("url"):
         st.markdown(f"[Open the page it used]({info['url']})")
     if info.get("no_label_info"):
@@ -114,6 +118,7 @@ def _confirm(p, info):
         with st.container(horizontal=True):
             if st.button("Yes, that's it", key=f"ni_yes_{pid}", type="primary"):
                 records.save_product_match(pid, info)
+                _apply_pack(pid, info)
                 del st.session_state[f"ni_found_{pid}"]
                 st.toast(f"Saved: {info.get('name') or p['name']}")
                 st.rerun()
@@ -133,9 +138,18 @@ def _confirm(p, info):
     with st.container(horizontal=True):
         if st.button("Yes, save it", key=f"ni_yes_{pid}", type="primary"):
             records.save_product_info(pid, info, info.get("barcode", ""))
+            _apply_pack(pid, info)
             del st.session_state[f"ni_found_{pid}"]
             st.toast(f"Saved info for {p['name']}")
             st.rerun()
         if st.button("Not this", key=f"ni_no_{pid}"):
             del st.session_state[f"ni_found_{pid}"]
             st.rerun()
+
+
+def _apply_pack(pid, info):
+    """A found pack size fixes this product's purchases that were saved as just "1"."""
+    if info.get("pack_units"):
+        fixed = records.apply_pack_size(pid, info["pack_units"], info.get("pack_unit") or "each")
+        if fixed:
+            st.toast(f"Pack size {info['pack_units']:g} {info.get('pack_unit')} applied to {fixed} purchase(s)")

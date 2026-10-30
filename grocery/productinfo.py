@@ -85,6 +85,9 @@ Return only JSON, no other text:
   "matched_name": the product's full name as listed, "matched_url": its product page URL,
   "image_url": the direct URL of the product's main photo if you saw one, else "",
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
+  "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "12 oz", "2 x 1 gal"), or "",
+  "pack_in_unit": how many {unit} are in ONE pack, converting if needed (12 oz = 0.75 lb;
+                  "2 x 1 gal" = 2 gal), or null if it can't be expressed in {unit},
   "reason": one sentence on what you found or why not,
   "info": {shape}
 }}"""
@@ -173,9 +176,10 @@ def _from_off(p, url):
 
 # ---------------------------------------------------------------- Gemini
 
-def web_lookup(model, query):
-    """query = everything known about the product (brand, name, size, store, what was said)."""
-    prompt = SEARCH_PROMPT.format(query=query, shape=INFO_SHAPE)
+def web_lookup(model, query, unit="each"):
+    """query = everything known about the product (brand, name, size, store, what was said).
+    unit = the item's standard unit, so the pack size comes back in it."""
+    prompt = SEARCH_PROMPT.format(query=query, shape=INFO_SHAPE, unit=unit)
     result, sources = gemini.search_json("product_web_lookup", model, prompt)
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
@@ -185,6 +189,10 @@ def web_lookup(model, query):
     info["no_label_info"] = not result.get("has_label_info") or not (info["ingredients"] or info["nutrients"])
     info["photo_url"] = page_image(info["url"]) or checked_image(result.get("image_url"))
     info["reason"] = result.get("reason", "")
+    info["pack_text"] = result.get("pack_text") or ""
+    pack = _num(result.get("pack_in_unit"))
+    info["pack_units"] = pack if pack and pack > 0 else None
+    info["pack_unit"] = unit
     return info
 
 
@@ -233,6 +241,8 @@ def product_columns(info):
     }
     if not cols["photo_url"]:
         del cols["photo_url"]
+    if info.get("pack_units"):
+        cols["pack_size"], cols["pack_unit"] = info["pack_units"], info.get("pack_unit", "")
     return cols
 
 

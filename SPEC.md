@@ -324,6 +324,11 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Voice fixes can change any field** of a card: item, product, brand, quantity, unit, price, kind, kept in (storage), perishable, expiry date, plus store and date.
   - A storage or perishable change on a known item updates that item (e.g. raspberries → Freezer from now on).
   - The confirmation lists exactly what changed, or warns that nothing did.
+- **Pack sizes**:
+  - A web search that finds the exact product also reads its pack size ("18 count", "12 oz") and converts it to the item's unit.
+  - On review, **"Look up pack sizes online"** fills new packaged items that are still counted as 1.
+  - In Needs info, a confirmed match also fixes earlier purchases of that product saved as "1".
+  - Products remember `pack_size`, so "I bought the blue eggs" means one full pack (18) next time.
 - **Mic button**: one big round button. Tap to start, tap the red stop to finish, or press and hold (release stops). No waveform or timer.
 - **Undo**: the last **20 changes**. Undo marks rows as undone (never erases them), so there's always a record.
 
