@@ -381,6 +381,12 @@ _Status: gathering requirements. No code until the plan is approved._
   - Scanning the same barcode again adds another pack.
   - The "Missed something?" mic and Save/Discard are on the same screen.
 - **Missing store**: a red "Store missing" box appears right above Save, pre-filled from store brands (Kirkland → Costco, Great Value → Walmart, Signature Select → Safeway, Member's Mark → Sam's Club, …). The voice fix sets the store from a store brand too.
+- **Review cards are compact**: one line per item (name · quantity · price · colored badges · delete). Everything else, including "Is your last X finished?", is under **Details**.
+- **No online lookups during review** (they took too long). Lookups live in **Needs info** on Home:
+  - It lists packaged products missing 📏 pack size and/or 🧾 ingredients.
+  - **One "Look it up online" fills both.**
+  - Other options: label photo, barcode, edit the search words, "No label to read", "Size varies / saved right".
+- **Nickname mic**: it plainly transcribes what was said (it no longer sees the product name, which made it invent look-alikes). It shows "Heard: …" to confirm before saving.
 - Gallery pickers stay available under "Or pick … from your gallery".
 
 ## Design principle: visual first (user rule, applies everywhere)

@@ -223,10 +223,13 @@ def _attach_products(actions, product_refs):
             a["product"], a["brand"], a["item"] = p["name"], p.get("brand", ""), p.get("item") or a.get("item")
 
 
-NICKNAME_PROMPT = """The user is saying one or more nicknames they use for the grocery product "{product}".
-Return only JSON: {{"nicknames": [each nickname exactly as said, short phrases]}}"""
+NICKNAME_PROMPT = """Transcribe the attached recording. The user is saying one or more short names they use
+for a grocery product (e.g. "Costco water", "Kirkland water"). Write each name exactly as spoken, word
+for word. Do not guess, shorten, correct or invent names; if a part is unclear, leave it out.
+Separate names where the user pauses or says "and" / "or".
+Return only JSON: {{"heard": the full transcript, "nicknames": [each name as spoken]}}"""
 
 
-def nicknames_from_audio(audio, product_name):
-    result = gemini.generate_json("nickname", model(), NICKNAME_PROMPT.format(product=product_name), [audio])
+def nicknames_from_audio(audio, product_name=""):
+    result = gemini.generate_json("nickname", model(), NICKNAME_PROMPT, [audio])
     return [n for n in result.get("nicknames", []) if isinstance(n, str) and n.strip()]

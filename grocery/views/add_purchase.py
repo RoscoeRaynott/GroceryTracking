@@ -338,40 +338,6 @@ def _refine_mic(state, review):
     st.rerun()
 
 
-def _pack_lookup(state, review):
-    """New packaged items still counted as "1": look up the exact product online for its pack size."""
-    todo = [c for c in review["items"] if c.get("packaged") and not c.get("pack_checked")
-            and c["kind"] == "Food" and float(c["units"] or 1) <= 1 and c["product"].strip()]
-    if not todo:
-        return
-    k = state["k"]
-    label = f"Look up pack sizes online ({len(todo)})"
-    if not st.button(label, key=f"{k}_packs", icon=":material/travel_explore:"):
-        return
-    model = sheets.get_settings()["model_lookup"]
-    pending, found = st.session_state.setdefault(f"{k}_pending", {}), []
-    bar = st.progress(0.0)
-    for n, c in enumerate(todo, start=1):
-        bar.progress(n / len(todo), text=f"Searching for {c['product']}…")
-        c["pack_checked"] = True
-        query = " ".join(x for x in [c.get("brand"), c["product"], f"sold at {review['store']}"] if x)
-        try:
-            info = productinfo.web_lookup(model, query, c["unit"])
-        except (productinfo.NotFound, GeminiError):
-            continue
-        except Exception:
-            continue
-        c["info"] = info  # also saves its ingredients / nutrition when you save
-        if info.get("pack_units"):
-            c["units"] = info["pack_units"]
-            c["pack_note"] = info.get("pack_text", "")
-            pending[f"it_{c['uid']}_units"] = c["units"]
-            found.append(f"{c['item']}: {info['pack_units']:g} {c['unit']}")
-    st.toast(("Pack sizes: " + "; ".join(found)) if found else "No pack sizes found online",
-             icon="✅" if found else "⚠️")
-    st.rerun()
-
-
 WIDGET = {"perishable": "perish"}  # card field → its widget key suffix
 LABELS = {"storage": "kept in", "units": "quantity", "expiry_date": "expires", "perishable": "perishable"}
 
@@ -451,7 +417,6 @@ def _review_step(state):
             st.caption("Scan a barcode to start. Each item appears here with its usual size and price.")
             return
     _refine_mic(state, review)
-    _pack_lookup(state, review)
     cards = review["items"]
     _price_check(review)
 
@@ -565,31 +530,35 @@ def _needs_attention(c, known, open_by_item):
 def _card(c, review, known, open_by_item, open_fields):
     uid = c["uid"]
     existing = known.get(records.norm(st.session_state.get(f"it_{uid}_item", c["item"])))
+    restock = existing is not None and existing["item_id"] in open_by_item
     with st.container(border=True):
+        # One compact line per item; everything else is inside "Details".
         badges = []
         if existing is None:
-            badges.append(":blue-badge[New item]")
-        if c["unclear"]:
-            badges.append(":orange-badge[Check this]")
+            badges.append(":blue-badge[new]")
+        if c["price"] is None:
+            badges.append(":orange-badge[price?]")
+        elif c["unclear"]:
+            badges.append(":orange-badge[check]")
+        if restock and not c.get("finished_item_id") and st.session_state.get(f"it_{uid}_done") is None:
+            badges.append(":violet-badge[last one finished?]")
+        if c.get("expiry_date"):
+            badges.append(f":orange-badge[exp {c['expiry_date']:%b %d}]")
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
-        with st.container(horizontal=True, vertical_alignment="top"):
-            st.markdown(f"{title} · {_money(c['price'])}  \n{' '.join(badges)}")
-            # Big, obvious delete for a card that was misheard or misread.
-            if st.button("Delete", key=f"it_{uid}_del", icon=":material/delete:", type="secondary",
-                         help="Remove this item; the rest stay"):
+        with st.container(horizontal=True, vertical_alignment="center"):
+            st.markdown(f"{title} · {c['units']:g} {c['unit']} · {_money(c['price'])} {' '.join(badges)}")
+            if st.button("", key=f"it_{uid}_del", icon=":material/delete:", type="tertiary",
+                         help="Delete this item; the rest stay"):
                 review["items"].remove(c)
                 st.toast(f"Removed {c['item'] or 'item'}")
                 st.rerun()
-        st.caption(f"{c['product'] or '—'} · {c['units']:g} {c['unit']} · receipt: “{c['receipt_text']}”")
-        if c.get("pack_note"):
-            st.markdown(f":blue-badge[pack from store site: {c['pack_note']}]")
-        if c.get("expiry_date"):
-            st.markdown(f":orange-badge[expires {c['expiry_date']:%b %d}]")
-        if c["unclear"] and c["note"]:
-            st.warning(c["note"])
 
-        box = st.container() if open_fields else st.expander("Edit")
-        with box:
+        with st.expander("Details"):
+            st.caption(f"{c['product'] or '—'} · seen as: “{c['receipt_text']}”")
+            if c.get("pack_note"):
+                st.markdown(f":blue-badge[pack from store site: {c['pack_note']}]")
+            if c["unclear"] and c["note"]:
+                st.warning(c["note"])
             c["item"] = st.text_input("Item", value=c["item"], key=f"it_{uid}_item")
             c["product"] = st.text_input("Product / brand", value=c["product"], key=f"it_{uid}_product")
             c["units"] = st.number_input(f"Quantity ({c['unit']})", value=float(c["units"]), min_value=0.0,
@@ -619,16 +588,21 @@ def _card(c, review, known, open_by_item, open_fields):
                                                 key=f"it_{uid}_storage")
                     c["perishable"] = st.toggle("Perishable", value=c["perishable"], key=f"it_{uid}_perish")
 
-        if existing is not None and existing["item_id"] in open_by_item:
-            last = max(open_by_item[existing["item_id"]], key=lambda b: b.get("purchased_on", ""))
-            answer = st.radio(f"Is your last {existing['name']} (bought {last['purchased_on']}) finished?",
-                              ["Yes, finished", "No, still have it"], index=None, key=f"it_{uid}_done",
-                              horizontal=True)
-            c["finished_item_id"] = existing["item_id"] if answer == "Yes, finished" else None
-            if answer == "Yes, finished":
-                c["finished_on"] = st.date_input("Finished on", value=timeutil.now().date(),
-                                                 key=f"it_{uid}_done_on", format="MM/DD/YYYY")
+            if restock:
+                _finished_question(c, existing, open_by_item)
 
+
+def _finished_question(c, existing, open_by_item):
+    """Restocking something still open: was the last batch finished?"""
+    uid = c["uid"]
+    last = max(open_by_item[existing["item_id"]], key=lambda b: b.get("purchased_on", ""))
+    answer = st.radio(f"Is your last {existing['name']} (bought {last['purchased_on']}) finished?",
+                      ["Yes, finished", "No, still have it"], index=None, key=f"it_{uid}_done",
+                      horizontal=True)
+    c["finished_item_id"] = existing["item_id"] if answer == "Yes, finished" else None
+    if answer == "Yes, finished":
+        c["finished_on"] = st.date_input("Finished on", value=timeutil.now().date(),
+                                         key=f"it_{uid}_done_on", format="MM/DD/YYYY")
 
 
 def _price_check(review):

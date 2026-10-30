@@ -219,15 +219,27 @@ def discard_draft(draft_id, photo_no=None):
 
 
 def products_needing_info():
-    """Packaged foods with no ingredients yet, newest first, with their item's emoji."""
-    food = {i["item_id"]: i for i in items() if i.get("kind") == "Food"}
+    """Packaged products still missing something, newest first.
+
+    Each gets "missing": "size" when it was only ever saved as 1 with no known pack size,
+    "ingredients" for foods with no label info yet.
+    """
+    tracked = {i["item_id"]: i for i in items() if i.get("kind") in ("Food", "Household")}
+    batches = sheets.read_tab("batches")
     out = []
     for p in sheets.read_tab("products"):
-        if p["item_id"] not in food or p.get("packaged") == "no":
+        item = tracked.get(p["item_id"])
+        if not item or p.get("packaged") == "no":
             continue
-        if p.get("info_status") in ("confirmed", "none") or p.get("ingredients"):
-            continue
-        out.append(dict(p, emoji=food[p["item_id"]].get("emoji", "")))
+        missing = []
+        units = [_float(b.get("units")) for b in batches if b.get("product_id") == p["product_id"]]
+        if not p.get("pack_size") and units and all(u in (None, 1.0) for u in units):
+            missing.append("size")
+        if (item.get("kind") == "Food" and p.get("info_status") not in ("confirmed", "none")
+                and not p.get("ingredients")):
+            missing.append("ingredients")
+        if missing:
+            out.append(dict(p, emoji=item.get("emoji", ""), missing=missing, item_row=item))
     return sorted(out, key=lambda p: p.get("created_at", ""), reverse=True)
 
 
@@ -435,3 +447,11 @@ def store_from_brands(texts):
             if brand in low:
                 return store
     return ""
+
+
+def mark_size_ok(product_id):
+    """Stop asking for a pack size (sold by weight, or the saved quantity is already right)."""
+    latest = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
+    size = latest[-1].get("units") if latest else "1"
+    unit = latest[-1].get("unit") if latest else "each"
+    sheets.update_rows("products", "product_id", {product_id: {"pack_size": size or "1", "pack_unit": unit}})

@@ -1,4 +1,4 @@
-"""Food products still missing ingredients / nutrition, and ways to fill them in."""
+"""Products still missing their pack size or label info; look each one up when you have a moment."""
 
 import streamlit as st
 
@@ -11,30 +11,39 @@ from grocery.views.common import back_home
 def render():
     back_home()
     st.title("Needs info")
-    st.caption("Packaged foods with no ingredients yet. Fill each one once; it's remembered for every future purchase.")
+    st.caption("📏 pack size · 🧾 ingredients & nutrition. Fill each once; it's remembered for every future purchase.")
 
     products = records.products_needing_info()
     if not products:
-        st.success("Every packaged food has its info. Nothing to do.")
+        st.success("Nothing missing.")
         return
 
     for p in products:
-        with st.expander(f"{p.get('emoji', '')} {p['name']}".strip()):
+        tags = " ".join({"size": "📏", "ingredients": "🧾"}[m] for m in p["missing"])
+        with st.expander(f"{tags}  {p.get('emoji', '')} {p['name']}".strip()):
             _fill(p)
 
 
 def _fill(p):
     pid = p["product_id"]
     with st.container(horizontal=True, vertical_alignment="center"):
-        product_ui.photo(p, p.get("emoji", ""), width=56)
-        st.markdown(f"**{p['name']}**")
-    product_ui.nicknames(p, f"ni_nick_{pid}")
+        product_ui.photo(p, p.get("emoji", ""), width=56, item=p.get("item_row"))
+        st.markdown(f"**{p['name']}**  \n" + " ".join(
+            {"size": ":orange-badge[pack size?]", "ingredients": ":orange-badge[ingredients?]"}[m]
+            for m in p["missing"]))
     found = st.session_state.get(f"ni_found_{pid}")
     if found:
         _confirm(p, found)
         return
 
-    tab_label, tab_barcode, tab_web = st.tabs(["Label photo", "Barcode", "Search the web"])
+    # One search fills both the pack size and the label info.
+    if st.button("Look it up online", key=f"ni_go_{pid}", icon=":material/travel_explore:", type="primary",
+                 width="stretch"):
+        query = st.session_state.get(f"ni_q_{pid}") or records.product_search_text(p)
+        _lookup(pid, lambda: productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
+                                                    records.item_unit(p["item_id"])))
+
+    tab_label, tab_barcode, tab_web = st.tabs(["Label photo", "Barcode", "Edit search"])
     with tab_label:
         st.caption("Photograph the ingredients list and Nutrition Facts panel (1–3 photos). This always wins.")
         photos.pick_photos(f"ni_label_{pid}", "Tap to photograph the label", "Ingredients + Nutrition Facts")
@@ -64,20 +73,17 @@ def _fill(p):
     with tab_web:
         query = st.text_area("Search for", value=records.product_search_text(p), key=f"ni_q_{pid}",
                              help="Everything known about this product. Add or fix details to make the search exact.")
-        st.caption("You'll check the result before it's saved.")
-        if st.button("Search", key=f"ni_web_{pid}", type="primary", disabled=not query.strip()):
-            def search():
-                try:
-                    return productinfo.off_by_name(p.get("brand", ""), p["name"])
-                except productinfo.NotFound:
-                    return productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
-                                                  records.item_unit(p["item_id"]))
-            _lookup(pid, search)
+        st.caption("Fix the words above, then tap “Look it up online”.")
 
-    st.divider()
-    if st.button("This product has no label to read", key=f"ni_none_{pid}", type="tertiary"):
-        records.mark_no_info(pid)
-        st.rerun()
+    with st.container(horizontal=True):
+        if "ingredients" in p["missing"] and st.button("No label to read", key=f"ni_none_{pid}", type="tertiary"):
+            records.mark_no_info(pid)
+            st.rerun()
+        if "size" in p["missing"] and st.button("Size varies / saved right", key=f"ni_size_{pid}", type="tertiary"):
+            records.mark_size_ok(pid)
+            st.rerun()
+    with st.expander("Nicknames"):
+        product_ui.nicknames(p, f"ni_nick_{pid}")
 
 
 def _lookup(pid, fetch, barcode=""):
