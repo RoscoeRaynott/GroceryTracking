@@ -5,3 +5,4 @@
 - **Don't guess facts.** If unsure about an API, library, or limit, say so or verify first.
 - Build **one phase/feature at a time**. After each one, ask the user to test it on their Pixel and confirm it works before moving on.
 - Explain things to the user simply and concisely.
+- **App design is visual first**: colors, badges, charts and icons over text. Keep screens easy for the eyes and intuitive.

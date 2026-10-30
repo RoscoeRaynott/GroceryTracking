@@ -339,6 +339,21 @@ _Status: gathering requirements. No code until the plan is approved._
   - IDs never change, even if a name is edited later.
 - Old test data: the user deletes it via History & undo, then removes the old "stores" and "purchases" tabs by hand.
 
+## Design principle: visual first (user rule, applies everywhere)
+
+- **Easy for the eyes, intuitive, minimal reading.** Use colors, badges, charts and icons instead of sentences.
+  - Example: items with enough data are **green**, items without are **red**, instead of writing "not enough data yet".
+- Extra details shown today will be trimmed later. Keep this idea in mind for every screen.
+
+## Phase 4 decisions (Pantry, warnings, Insights)
+
+- **Pantry** shows days open + usual lifespan, **no estimate of how much is left**.
+- **Quick buttons per item** in Pantry, as a voice backup:
+  - **Finished**: one tap.
+  - **Some went bad**: a **free text box** ("200 grams", "one bell pepper", "half"), read by the AI, then previewed and approved. No fixed fraction choices.
+- **Insights lists every item**, color-coded by how much data it has.
+- A batch finished on the day it was bought counts as lasting 1 day.
+
 ## Future: one central voice button (user request)
 
 - Eventually **one big voice button**. The user just talks, and the AI works out the intent:
