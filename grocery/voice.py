@@ -22,8 +22,8 @@ RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
 
 KNOWN ITEMS (generic item names): {items}
 
-KNOWN PRODUCTS with the user's own nicknames (ref | item | product | nicknames). When the user uses a
-nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
+KNOWN PRODUCTS with the user's own nicknames (ref | item | product | one pack as sold | nicknames). When the
+user uses a nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
 {products}
 
 Work out every action the user wants. Possible actions:
@@ -39,6 +39,7 @@ Work out every action the user wants. Possible actions:
 - "delete": the user wants a batch removed (e.g. "delete the avocados I added yesterday").
 - "add": the user bought something. Use RECENT PURCHASES to fill in product, quantity and price when
   they refer to a usual purchase ("the 2-gallon milk from Costco"); "based_on" = that ref.
+{packs_rule}
 {mode_rule}
 Choosing batches: match by generic item (an avocado is an avocado). If several open batches match,
 pick the MOST RECENTLY BOUGHT one. Only ask a question when you truly cannot tell which item they
@@ -57,8 +58,9 @@ Return only JSON:
       "store": store exactly as said (e.g. "Costco Business Center") or null,
       "product": FULL product description with every detail the user said: brand, cut, variety,
                  pack size, where it is sold (e.g. "Costco Business Center whole mutton, 15 lb"),
-      "units": number, "unit": one of {units},
-      "price": dollars or null if unknown, "based_on": purchase ref or null, "purchased_on": "YYYY-MM-DD",
+      "packs": number of packs as sold, or null, "units": number or null, "unit": one of {units},
+      "price": dollars or null if unknown, "price_is_total": true/false,
+      "based_on": purchase ref or null, "purchased_on": "YYYY-MM-DD",
       "product_ref": known product ref if it is one of KNOWN PRODUCTS, else null,
       "said_name": the exact words the user used for this product,
       "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false, "emoji": one emoji or "",
@@ -72,6 +74,18 @@ Return only JSON:
   ],
   "not_understood": anything you could not map to an action, or ""
 }}"""
+
+PACKS_RULE = """  Amounts: when the user counts PACKAGES of something sold in a package ("5 crates of Costco water",
+  "2 egg whites", "a case of sparkling water", "3 bottles of shampoo"), set "packs" to that count and
+  "units" to null; the app multiplies by the known pack size. When they give an amount in a measuring
+  unit ("2 gallons", "3 lb", "500 ml") or count loose things ("6 avocados", "3 bell peppers"), set
+  "units" and "unit" and leave "packs" null.
+  Prices: a price said for packs is the price of ONE pack as sold (like a receipt line per pack), so
+  "price_is_total" is false; set it true only when the user clearly says it is for all of them
+  ("25 dollars total", "altogether", "for all five").
+  Unit for a new item: "ml" for liquids (egg whites, juice, oil, sauces), except "gal" for drinking
+  water and milk; "each" for countable things, "lb" for things sold by weight, "loads" for detergent."""
+
 
 MODE_RULES = {
     "any": "",
@@ -109,7 +123,7 @@ def understand(model, audio=None, text=None, mode="any"):
         batches=batch_lines, history=history_lines,
         items=", ".join(i["name"] for i in records.items()) or "(none yet)",
         products=products_text(product_refs),
-        mode_rule=MODE_RULES[mode], units=UNITS, kinds=KINDS, storage=STORAGE,
+        mode_rule=MODE_RULES[mode], units=UNITS, kinds=KINDS, storage=STORAGE, packs_rule=PACKS_RULE,
     )
     media = [(audio[0], audio[1])] if audio else []
     result = gemini.generate_json("voice", model, prompt, media)
@@ -154,11 +168,12 @@ Items (index | item | product | quantity | price):
 RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
 {history}
 
-KNOWN PRODUCTS with the user's own nicknames (ref | item | product | nicknames). When the user uses a
-nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
+KNOWN PRODUCTS with the user's own nicknames (ref | item | product | one pack as sold | nicknames). When the
+user uses a nickname or a close variant ("Costco egg whites", "wholesale mutton"), it means that product:
 {products}
 
 Apply only what the user says; anything about an item can change, not just price and weight.
+{packs_rule}
 If the store is unknown and they name a store brand, set the store too (Kirkland = Costco,
 Great Value = Walmart, Signature Select = Safeway, H-E-B brand = H-E-B, Member's Mark = Sam's Club).
 Examples: "I keep raspberries in the freezer" sets that item's storage to Freezer; "it's from Costco" changes the store; "I bought it 3 days ago"
@@ -171,11 +186,12 @@ Return only JSON:
   "transcript": what the user said, word for word,
   "store": new store or null, "date": new date "YYYY-MM-DD" or null,
   "updates": [{{"index": item index, and ONLY the fields the user changed, any of:
-               "item", "product", "brand", "units" (number), "unit" (one of {units}),
-               "price" (dollars), "kind" (one of {kinds}), "storage" (one of {storage}),
+               "item", "product", "brand", "packs" (number), "units" (number), "unit" (one of {units}),
+               "price" (dollars), "price_is_total" (true/false), "kind" (one of {kinds}), "storage" (one of {storage}),
                "perishable" (true/false), "expiry_date" ("YYYY-MM-DD")}}],
-  "adds": [{{"item": generic item name, "product": full product description, "units": number,
-            "unit": one of {units}, "price": dollars or null, "based_on": purchase ref or null,
+  "adds": [{{"item": generic item name, "product": full product description, "packs": number or null,
+            "units": number or null, "unit": one of {units}, "price": dollars or null,
+            "price_is_total": true/false, "based_on": purchase ref or null,
             "product_ref": known product ref or null, "said_name": the user's exact words for it,
             "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false,
             "emoji": one emoji or "", "packaged": true/false,
@@ -196,14 +212,14 @@ def refine(review, audio=None, text=None):
         today=now.strftime("%Y-%m-%d"), weekday=now.strftime("%A"),
         heard="The user's voice recording is attached." if audio else f'The user typed: "{text}"',
         store=review.get("store") or "(unknown)", date=review.get("date"),
-        items="\n".join(f"{n} | {c['item']} | {c['product']} | {c['units']:g} {c['unit']} | "
+        items="\n".join(f"{n} | {c['item']} | {c['product']} | {quantity_text(c)} | "
                         f"{'$%.2f' % c['price'] if c['price'] is not None else 'price unknown'}"
                         for n, c in enumerate(review["items"])) or "(none yet)",
         history="\n".join(
             f"{ref} | {h['item']} | {h.get('product', '')} | {h.get('store', '')} | {h.get('units', '')} "
             f"{h.get('unit', '')} | ${h.get('price_paid', '')} | {h.get('purchased_on', '')}"
             for ref, h in history_refs.items()) or "(none)",
-        units=UNITS, kinds=KINDS, storage=STORAGE,
+        units=UNITS, kinds=KINDS, storage=STORAGE, packs_rule=PACKS_RULE,
     )
     result = gemini.generate_json("voice_refine", model(), prompt, [audio] if audio else [])
     _attach_products(result.get("adds", []), product_refs)
@@ -211,8 +227,22 @@ def refine(review, audio=None, text=None):
 
 
 def products_text(product_refs):
-    return "\n".join(f"{ref} | {p.get('item', '')} | {p['name']} | {p.get('nicknames', '')}"
+    return "\n".join(f"{ref} | {p.get('item', '')} | {p['name']} | {pack_text(p)} | {p.get('nicknames', '')}"
                      for ref, p in product_refs.items()) or "(none yet)"
+
+
+def pack_text(product):
+    size = records._float(product.get("pack_size"))
+    return f"{size:g} {product.get('pack_unit', '')}".strip() if size else "pack size unknown"
+
+
+def quantity_text(card):
+    """How a review card's amount reads to the AI: "5 packs of 6 gal = 30 gal", or "2.4 lb"."""
+    if card.get("packs") is not None:
+        if card.get("pack_size"):
+            return f"{card['packs']:g} packs of {card['pack_size']:g} {card['unit']} = {card['units']:g} {card['unit']}"
+        return f"{card['packs']:g} packs (pack size unknown)"
+    return f"{card['units']:g} {card['unit']}"
 
 
 def _attach_products(actions, product_refs):

@@ -163,6 +163,7 @@ def save_purchase(review, finished, draft_id, readings):
             "receipt_total": review.get("total_paid", ""),
             "expiry_date": card["expiry_date"].isoformat() if card.get("expiry_date") else "",
             "status": "open" if card["kind"] != "One-time" else "not tracked", "created_at": now,
+            "packs": card["packs"] if card.get("packs") is not None else "",
         })
     sheets.append_rows("batches", batches)
 
@@ -221,8 +222,8 @@ def discard_draft(draft_id, photo_no=None):
 def products_needing_info():
     """Packaged products still missing something, newest first.
 
-    Each gets "missing": "size" when it was only ever saved as 1 with no known pack size,
-    "ingredients" for foods with no label info yet.
+    Each gets "missing": "size" when it was only ever counted in packs (or saved as 1) with no known
+    pack size, "ingredients" for foods with no label info yet.
     """
     tracked = {i["item_id"]: i for i in items() if i.get("kind") in ("Food", "Household")}
     batches = sheets.read_tab("batches")
@@ -232,8 +233,8 @@ def products_needing_info():
         if not item or p.get("packaged") == "no":
             continue
         missing = []
-        units = [_float(b.get("units")) for b in batches if b.get("product_id") == p["product_id"]]
-        if not p.get("pack_size") and units and all(u in (None, 1.0) for u in units):
+        mine = [b for b in batches if b.get("product_id") == p["product_id"]]
+        if not p.get("pack_size") and mine and all(_waiting_for_pack_size(b) for b in mine):
             missing.append("size")
         if (item.get("kind") == "Food" and p.get("info_status") not in ("confirmed", "none")
                 and not p.get("ingredients")):
@@ -271,7 +272,7 @@ def purchase_history(limit=60):
     """Most recent batch per (item, store, product), newest first, for voice quick-add."""
     seen, out = set(), []
     rows = [b for b in sheets.read_tab("batches") if b.get("status") != "deleted"]
-    for b in sorted(rows, key=lambda b: b.get("purchased_on", ""), reverse=True):
+    for b in sorted(rows, key=lambda b: (b.get("purchased_on", ""), b.get("created_at", "")), reverse=True):
         key = (b.get("item_id"), norm(b.get("store")), norm(b.get("product")))
         if key in seen:
             continue
@@ -408,13 +409,19 @@ def set_item_picture(item_id, url):
     sheets.update_rows("items", "item_id", {item_id: {"photo_url": url}})
 
 
+def _waiting_for_pack_size(batch):
+    """Saved before its pack size was known: counted in packs (units = packs), or an old plain "1"."""
+    packs, units = _float(batch.get("packs")), _float(batch.get("units"))
+    return units == packs if packs is not None else units in (None, 1.0)
+
+
 def apply_pack_size(product_id, pack_units, unit, fix_batches=True):
-    """Remember a product's pack size; purchases saved as just "1" of it become one full pack."""
+    """Remember a product's pack size; purchases counted in packs become packs x pack size."""
     sheets.update_rows("products", "product_id", {product_id: {"pack_size": pack_units, "pack_unit": unit}})
     if fix_batches:
-        changes = {b["batch_id"]: {"units": pack_units, "unit": unit}
+        changes = {b["batch_id"]: {"units": (_float(b.get("packs")) or 1.0) * pack_units, "unit": unit}
                    for b in sheets.read_tab("batches")
-                   if b.get("product_id") == product_id and _float(b.get("units")) in (None, 1.0)}
+                   if b.get("product_id") == product_id and _waiting_for_pack_size(b)}
         sheets.update_rows("batches", "batch_id", changes)
         return len(changes)
     return 0
