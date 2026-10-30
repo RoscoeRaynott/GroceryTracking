@@ -6,9 +6,11 @@ from grocery import recorder, records, voice
 from grocery.gemini import GeminiError
 
 
-def photo(product, emoji="", width=64):
-    """The product's photo if there is one, else its emoji."""
+def photo(product, emoji="", width=64, item=None):
+    """The product's own photo, else the item's generic picture, else its emoji."""
     url = (product or {}).get("photo_url", "")
+    if not url and (item or {}).get("photo_url", "") not in ("", "none"):
+        url = item["photo_url"]
     if url:
         st.image(url, width=width)
     else:

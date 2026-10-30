@@ -89,6 +89,7 @@ def save_purchase(review, finished, draft_id, readings):
                 "perishable": card["perishable"] if card["kind"] != "One-time" else False,
                 "unit": card["unit"], "storage": card["storage"], "emoji": card.get("emoji", ""),
                 "tracked": card["kind"] != "One-time", "created_at": now,
+                "photo_url": item_picture(card.get("wiki"), card["item"]),
             }
             known[norm(row["name"])] = {k: sheets._cell(v) for k, v in row.items()}
             new_items.append(row)
@@ -352,3 +353,27 @@ def products_prompt_lines(limit=80):
     """Known products with nicknames, for the voice AI: ref | item | product | nicknames."""
     rows = sorted(products(), key=lambda p: p.get("created_at", ""), reverse=True)[:limit]
     return {f"p{n}": p for n, p in enumerate(rows, start=1)}
+
+
+def item_picture(*titles):
+    """Generic item picture URL, "none" if Wikipedia has none, "" to retry later."""
+    try:
+        return productinfo.wiki_image(*titles) or "none"
+    except productinfo.TryLater:
+        return ""
+
+
+def fill_missing_item_pictures(limit=3):
+    """Look up pictures for items saved before pictures existed (a few per visit)."""
+    todo = [i for i in items() if not i.get("photo_url")][:limit]
+    changes = {}
+    for i in todo:
+        pic = item_picture(i["name"])
+        if not pic:
+            break  # Wikipedia is busy: try again next time
+        changes[i["item_id"]] = {"photo_url": pic}
+    sheets.update_rows("items", "item_id", changes)
+
+
+def set_item_picture(item_id, url):
+    sheets.update_rows("items", "item_id", {item_id: {"photo_url": url}})

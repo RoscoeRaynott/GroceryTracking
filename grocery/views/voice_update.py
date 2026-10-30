@@ -14,22 +14,27 @@ def render():
     back_home()
     st.title("Voice update")
 
-    pending = st.session_state.get("vu")
-    if pending:
-        _preview(pending)
-    else:
-        _listen()
-
+    st.caption("e.g. “Two avocados and half the spinach went bad. Butter finished three days ago. "
+               "The milk expires November 2nd.”")
+    panel("vu")
     _recent_changes()
 
 
-def _listen():
-    st.caption("e.g. “Two avocados and half the spinach went bad. Butter finished three days ago. "
-               "The milk expires November 2nd.”")
-    nonce = st.session_state.setdefault("vu_nonce", 0)
-    audio = recorder.record(f"vu_mic_{nonce}")
-    typed = st.text_input("Or type it", key=f"vu_text_{nonce}")
-    go_typed = st.button("Use typed text", key=f"vu_go_{nonce}", disabled=not typed.strip())
+def panel(k, prompt="Tap to speak"):
+    """Mic + text box → preview → approve. Shared by Voice update ("vu") and Pantry ("pv")."""
+    pending = st.session_state.get(k)
+    if pending:
+        _preview(k, pending)
+    else:
+        _listen(k, prompt)
+
+
+def _listen(k, prompt):
+    nonce = st.session_state.setdefault(f"{k}_nonce", 0)
+    audio = recorder.record(f"{k}_mic_{nonce}", prompt)
+    typed = st.text_input("Or type it", key=f"{k}_text_{nonce}", label_visibility="collapsed",
+                          placeholder="Or type it")
+    go_typed = st.button("Use typed text", key=f"{k}_go_{nonce}", disabled=not typed.strip())
     if not (audio or go_typed):
         return
     with st.spinner("Listening…"):
@@ -40,12 +45,12 @@ def _listen():
         except GeminiError as ex:
             st.error(f"Couldn't understand that: {ex}")
             return
-    st.session_state["vu_nonce"] = nonce + 1
-    st.session_state["vu"] = {"result": result, "batch_refs": batch_refs, "history_refs": history_refs}
+    st.session_state[f"{k}_nonce"] = nonce + 1
+    st.session_state[k] = {"result": result, "batch_refs": batch_refs, "history_refs": history_refs}
     st.rerun()
 
 
-def _preview(pending):
+def _preview(k, pending):
     result, refs = pending["result"], pending["batch_refs"]
     st.markdown(f"> {result.get('transcript', '')}")
 
@@ -62,7 +67,7 @@ def _preview(pending):
         options = [o for o in q.get("options", []) if o.get("label")]
         if not options:
             continue
-        pick = st.radio(q.get("text", "Which one?"), [o["label"] for o in options], index=None, key=f"vu_q_{n}")
+        pick = st.radio(q.get("text", "Which one?"), [o["label"] for o in options], index=None, key=f"{k}_q_{n}")
         chosen = next((o for o in options if o["label"] == pick), None)
         action = q.get("action") or {}
         if chosen and chosen.get("batch") in refs and action.get("type") in UPDATE_TYPES:
@@ -85,11 +90,11 @@ def _preview(pending):
         st.caption(f"Didn't understand: {result['not_understood']}")
 
     with st.container(horizontal=True):
-        if st.button("Approve", type="primary", disabled=not (actions or adds)):
+        if st.button("Approve", key=f"{k}_approve", type="primary", disabled=not (actions or adds)):
             if actions:
                 events.apply([dict(a, type=a["type"]) for a in actions],
                              said=result.get("transcript", ""), source="voice")
-            st.session_state.pop("vu", None)
+            st.session_state.pop(k, None)
             if adds:
                 state = st.session_state.setdefault("vc", add_purchase._fresh("vc"))
                 add_purchase.start_voice_review(state, result, pending["history_refs"])
@@ -97,8 +102,8 @@ def _preview(pending):
                 go("add")
             st.toast(f"Saved {len(actions)} change(s)")
             st.rerun()
-        if st.button("Cancel"):
-            st.session_state.pop("vu", None)
+        if st.button("Cancel", key=f"{k}_cancel"):
+            st.session_state.pop(k, None)
             st.rerun()
 
 

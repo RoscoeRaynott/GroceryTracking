@@ -62,6 +62,8 @@ Return only JSON:
       "product_ref": known product ref if it is one of KNOWN PRODUCTS, else null,
       "said_name": the exact words the user used for this product,
       "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false, "emoji": one emoji or "",
+      "wiki": the English Wikipedia article title that best pictures this generic item (e.g. "Egg white",
+              "Catla" for katla fish, "Ilish" for hilsa, "Half and half"), or "",
       "packaged": true/false, "said": short quote}}
   ],
   "questions": [
@@ -171,7 +173,9 @@ Return only JSON:
             "unit": one of {units}, "price": dollars or null, "based_on": purchase ref or null,
             "product_ref": known product ref or null, "said_name": the user's exact words for it,
             "kind": one of {kinds}, "storage": one of {storage}, "perishable": true/false,
-            "emoji": one emoji or "", "packaged": true/false}}],
+            "emoji": one emoji or "", "packaged": true/false,
+            "wiki": the English Wikipedia article title that best pictures this generic item (e.g. "Egg white",
+              "Catla" for katla fish, "Ilish" for hilsa, "Half and half"), or "",}}],
   "removes": [item indexes]
 }}"""
 

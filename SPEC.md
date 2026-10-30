@@ -352,6 +352,15 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Saved automatically** when the user names a product by voice in their own words and it matches.
   - The voice AI sees every known product with its nicknames and reuses that product (and its last price and size).
 
+## Pantry voice & item pictures (decided)
+
+- **Pantry has its own mic** ("Remember something?") for "three eggs broke", "the broccoli went bad", and so on. It uses the same preview → approve → Undo as Voice update. Voice update stays on Home too.
+- **Each item gets its own generic picture** from its English Wikipedia article (free, no AI cost).
+  - The AI names the best article ("Catla" for katla fish, "Ilish" for hilsa, "Egg white").
+  - Items saved earlier get pictures filled in a few at a time.
+  - In Insights → item → **Change picture**, type a better word if two items look alike.
+- **Picture order**: the product's own photo → the item's picture → emoji.
+
 ## Design principle: visual first (user rule, applies everywhere)
 
 - **Easy for the eyes, intuitive, minimal reading.** Use colors, badges, charts and icons instead of sentences.

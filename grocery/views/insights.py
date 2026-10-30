@@ -4,7 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from grocery import analytics, events, sheets
+from grocery import analytics, events, records, sheets
 from grocery.views import product_ui
 from grocery.views.common import back_home
 
@@ -29,6 +29,7 @@ def render():
     pick = st.selectbox("Item", items, format_func=lambda i: f"{DOT[levels[i['item_id']][0]]} "
                         f"{i.get('emoji', '')} {i['name']}  ({levels[i['item_id']][1]})",
                         label_visibility="collapsed", key="ins_item")
+    _picture(pick)
     summary = analytics.item_summary(pick["item_id"])
     _best_place(summary["best"], pick, cfg)
     _lifespan(summary, pick)
@@ -43,9 +44,26 @@ def _products(item):
     for p in rows:
         with st.container(border=True):
             with st.container(horizontal=True, vertical_alignment="center"):
-                product_ui.photo(p, item.get("emoji", ""), width=56)
+                product_ui.photo(p, item.get("emoji", ""), width=56, item=item)
                 st.markdown(f"**{p['name']}**  \n:gray[{p.get('brand', '')}]")
             product_ui.nicknames(p, f"ins_nick_{p['product_id']}")
+
+
+def _picture(item):
+    """The item's picture, with a way to swap it if two items look alike."""
+    with st.container(horizontal=True, vertical_alignment="center"):
+        product_ui.photo(None, item.get("emoji", ""), width=72, item=item)
+        st.markdown(f"### {item['name']}")
+        with st.popover("Change picture", icon=":material/image:", key=f"pic_{item['item_id']}"):
+            word = st.text_input("Picture of…", key=f"picq_{item['item_id']}",
+                                 placeholder="e.g. Egg white, Ilish, Half and half")
+            if st.button("Find picture", key=f"picgo_{item['item_id']}", disabled=not word.strip()):
+                pic = records.item_picture(word)
+                if pic in ("", "none"):
+                    st.warning("No picture found for that. Try another word.")
+                else:
+                    records.set_item_picture(item["item_id"], pic)
+                    st.rerun()
 
 
 def _best_place(best, item, cfg):

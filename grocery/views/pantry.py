@@ -4,7 +4,7 @@ import streamlit as st
 
 from grocery import analytics, events, records, voice
 from grocery.gemini import GeminiError
-from grocery.views import product_ui
+from grocery.views import product_ui, voice_update
 from grocery.views.common import back_home
 
 PLACES = [("Freezer", ":material/ac_unit:"), ("Fridge", ":material/kitchen:"), ("Open air", ":material/shelves:")]
@@ -14,11 +14,15 @@ BADGE = {"red": "red", "orange": "orange", "ok": "green"}
 def render():
     back_home()
     st.title("Pantry")
+    with st.container(border=True):
+        st.markdown("**Remember something?** :gray[e.g. three eggs broke · the broccoli went bad · butter finished]")
+        voice_update.panel("pv", "Tap and say what went bad or finished")
     rows = analytics.pantry()
     if not rows:
         st.info("Nothing open. Add a purchase to fill your pantry.")
         return
 
+    records.fill_missing_item_pictures()
     products = {p["product_id"]: p for p in records.products()}
     for place, icon in PLACES:
         here = [r for r in rows if (r["item"].get("storage") or "Open air") == place]
@@ -36,7 +40,7 @@ def _row(r, product=None):
     color = BADGE[r["level"]]
     with st.container(border=True):
         with st.container(horizontal=True, vertical_alignment="center"):
-            product_ui.photo(product, item.get("emoji", ""), width=48)
+            product_ui.photo(product, item.get("emoji", ""), width=48, item=item)
             usual = f" / ~{r['expected']:.0f}d" if r["expected"] else ""
             note = f" :{color}-badge[{r['reason']}]" if r["reason"] else ""
             st.markdown(f"**{b['item']}** :{color}-badge[{r['days_open']}d{usual}]{note}  \n"

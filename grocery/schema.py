@@ -8,7 +8,7 @@ reads on its own.
 TABS = {
     "items": [
         "item_id", "name", "kind", "perishable", "unit", "storage",
-        "emoji", "tracked", "created_at",
+        "emoji", "tracked", "created_at", "photo_url",
     ],
     "products": [
         "product_id", "item_id", "item", "brand", "name", "barcode", "packaged",
