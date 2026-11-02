@@ -349,7 +349,7 @@ _Status: gathering requirements. No code until the plan is approved._
   - Reading a photo: each receipt line pops in as a gray chip as the AI writes it.
   - Working out items: a real progress bar (receipt lines turned into items so far, e.g. "14 of 23 lines") plus green item chips with emojis.
   - Uses Gemini's streaming mode, which returns the same answer in the same time, just piece by piece. Screen updates are limited to 4 a second and can never break or slow the reading. If streaming fails, the app quietly uses the normal call.
-- **Deleting a purchase keeps what you confirmed (decided):** History → Delete removes the purchase and its finished/waste records. A product with confirmed info, pack size, barcode, nicknames or a photo is kept, along with its item, and reused the next time you buy it. Only bare leftovers (e.g. a misheard test entry) are removed.
+- **Deleting never erases what you confirmed (decided):** products and items are never removed by a delete; their info, pack size, barcode, nicknames and photo are reused the next time you buy them.
 - **After a lookup, everything follows (decided):**
   - Saving a match always shows **"1 pack = how many {unit}?"**, prefilled from the lookup and editable. It also lists the purchases it will change (e.g. "1 ml → 2,839 ml").
   - Saving updates the product (info, photo, pack size, barcode) and its purchases (amount and unit). Pantry, Insights, lifespans, warnings and best price are all calculated from those rows, so they follow.
@@ -362,8 +362,12 @@ _Status: gathering requirements. No code until the plan is approved._
 
 - **Costco and Costco Business Center are one store, "Costco"** (same products). Web searches check both sites.
 - A **"History & undo"** link on Home has two lists:
-  - **Recent purchases (last 20) with Delete.** Delete **erases** the purchase completely: its batches, their events, its AI readings, and any item, product, or store nothing else uses. Meant for test entries.
+  - **Recent purchases (last 20)**, each item on its own row with a 🗑 button that deletes **only that item**. Receipts with 2+ items also have **Delete whole receipt**, which asks first.
+  - **Every delete is undoable.** A delete marks the batch "deleted" (the row stays in the Sheet) and appears under Recent changes with Undo. Deleted batches are hidden everywhere: Pantry, History, Needs info, stores, voice history.
+  - Undoing an older change never brings back a batch that was deleted since.
   - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
+
+- **To-do (later):** a "Same as a product I have" button in Needs info to merge duplicate products (e.g. the same Kirkland water saved twice).
 
 ## Sheet layout v2 (decided)
 

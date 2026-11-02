@@ -79,8 +79,11 @@ def apply(actions, said, source):
 
 def undo(change_id):
     events = [e for e in all_events() if e.get("change_id") == change_id and e.get("undone") != "yes"]
+    deleted = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("status") == "deleted"}
     restore = {}
     for e in events:
+        if e["batch_id"] in deleted and e.get("type") != "deleted":
+            continue  # undoing an older change must not bring back a batch you deleted since
         if e.get("previous"):
             try:
                 restore[e["batch_id"]] = json.loads(e["previous"])
