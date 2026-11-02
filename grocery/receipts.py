@@ -52,6 +52,12 @@ existing name EXACTLY and set "is_new": false. Truly different foods stay separa
 EXISTING ITEMS (name | kind | unit | storage | perishable):
 {items}
 
+The user's KNOWN PRODUCTS (ref | item | product | one pack as sold | nicknames). If a line is one of
+these exact products (same brand and product, even if the receipt abbreviates it or writes the size
+differently, e.g. "KS WATER 40PK" = "Kirkland Signature Purified Drinking Water, 40 x 16.9 fl oz"),
+set "product_ref" to its ref and use its item. Different brands or variants are NOT the same product.
+{products}
+
 RECEIPT LINES (index: kind | text | quantity | amount):
 {lines}
 
@@ -77,6 +83,9 @@ Return only JSON:
       "brand": brand if known, else "",
       "packaged": true if sold in a labelled package (has an ingredients list / nutrition label),
                   false for loose produce, deli, bakery or anything without a label,
+      "product_ref": ref of the KNOWN PRODUCT this line is, or null,
+      "packs": number of packs as sold on this line for a packaged product (e.g. "2 @ 4.99" -> 2,
+               a single line -> 1), or null for loose / weighed things,
       "units": total quantity bought in the item's unit (e.g. 2 x 1-gallon jugs -> 2; a 6-ct bag
                of avocados -> 6; 2.31 lb of carrots -> 2.31; 104-load pods -> 104),
       "price": final price paid for this item in dollars AFTER its discounts, BEFORE tax,
@@ -93,8 +102,8 @@ tax, total and payment lines. Never invent prices; if an item's price is unknown
 mark it unclear."""
 
 
-def transcribe(model, jpeg):
-    return gemini.generate_json("receipt_read", model, TRANSCRIBE_PROMPT, [(jpeg, "image/jpeg")])
+def transcribe(model, jpeg, on_text=None):
+    return gemini.generate_json("receipt_read", model, TRANSCRIBE_PROMPT, [(jpeg, "image/jpeg")], on_text=on_text)
 
 
 def order_photos(readings):
@@ -162,7 +171,9 @@ def apply_answers(merged, questions, answers):
     return merged
 
 
-def interpret(model, store, source_type, merged, items):
+def interpret(model, store, source_type, merged, items, product_refs=None, on_text=None):
+    """Receipt lines -> items. product_refs = {ref: product row} the AI may match lines to;
+    on_text(reply so far) is called while the reply streams in (for live progress)."""
     item_lines = "\n".join(
         f"{i['name']} | {i['kind']} | {i['unit']} | {i['storage']} | {i['perishable']}" for i in items
     ) or "(none yet)"
@@ -170,11 +181,13 @@ def interpret(model, store, source_type, merged, items):
         f"{n}: {l.get('kind')} | {l.get('text')} | {l.get('quantity')} {l.get('quantity_unit') or ''} | {l.get('amount')}"
         for n, l in enumerate(merged)
     )
+    from grocery import voice  # local import: voice imports records, which imports this module's users
     prompt = INTERPRET_PROMPT.format(
         store=store or "unknown", source_type=source_type or "unknown", items=item_lines,
+        products=voice.products_text(product_refs or {}),
         lines=line_text, kinds=KINDS, units=UNITS, storage=STORAGE,
     )
-    return gemini.generate_json("receipt_items", model, prompt)
+    return gemini.generate_json("receipt_items", model, prompt, on_text=on_text)
 
 
 def summarize(readings):

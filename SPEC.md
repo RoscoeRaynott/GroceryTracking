@@ -343,6 +343,12 @@ _Status: gathering requirements. No code until the plan is approved._
   - Pack size not known yet: the card shows "N packs · pack size?". The product appears in Needs info, and once its size is found, those purchases become packs × size.
   - The review card shows the math as a badge (`5 × 6 gal`). Changing packs (in Details or by voice) recalculates the amount and price.
   - New liquids are measured in **mL**, except drinking water and milk in **gal**.
+- **Receipts reuse your saved products (decided):** the receipt AI sees your known products (with pack sizes and nicknames) and matches lines to them ("KS WATER 40PK" = your saved Kirkland water). A matched line reuses that product, its item and its pack size, so it never shows up in Needs info again.
+- **Live progress while reading receipts (decided, Option A):**
+  - A step bar: 📷 Photos → 🧾 Items → ✅ Review.
+  - Reading a photo: each receipt line pops in as a gray chip as the AI writes it.
+  - Working out items: a real progress bar (receipt lines turned into items so far, e.g. "14 of 23 lines") plus green item chips with emojis.
+  - Uses Gemini's streaming mode, which returns the same answer in the same time, just piece by piece. Screen updates are limited to 4 a second and can never break or slow the reading. If streaming fails, the app quietly uses the normal call.
 - **Deleting a purchase keeps what you confirmed (decided):** History → Delete removes the purchase and its finished/waste records. A product with confirmed info, pack size, barcode, nicknames or a photo is kept, along with its item, and reused the next time you buy it. Only bare leftovers (e.g. a misheard test entry) are removed.
 - **After a lookup, everything follows (decided):**
   - Saving a match always shows **"1 pack = how many {unit}?"**, prefilled from the lookup and editable. It also lists the purchases it will change (e.g. "1 ml → 2,839 ml").

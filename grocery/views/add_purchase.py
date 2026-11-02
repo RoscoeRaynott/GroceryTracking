@@ -6,6 +6,9 @@ Say it: speak or type what you bought → review cards → save or discard.
 """
 
 import datetime as dt
+import json
+import re
+import time
 import uuid
 
 import streamlit as st
@@ -56,6 +59,7 @@ def _reset(state):
 
 def _photos_step(state):
     model = sheets.get_settings()["model_receipts"]
+    _steps(0)
 
     if not state["readings"] and not st.session_state.get("photos_queue"):
         _offer_resume(state)
@@ -75,15 +79,17 @@ def _photos_step(state):
         if photo.get("read"):
             continue
         photo_no = len(state["readings"]) + 1
-        with st.spinner(f"Reading photo {photo_no}…"):
-            try:
-                reading = receipts.transcribe(model, photo["data"])
-            except GeminiError as ex:
-                st.error(f"Couldn't read {photo['name']}: {ex}")
-                if st.button("Remove this photo", key=f"ap_drop_{n}"):
-                    queue.pop(n)
-                    st.rerun()
-                return
+        live = _LiveLines(st.empty(), photo_no)
+        try:
+            reading = receipts.transcribe(model, photo["data"], on_text=live)
+        except GeminiError as ex:
+            live.done()
+            st.error(f"Couldn't read {photo['name']}: {ex}")
+            if st.button("Remove this photo", key=f"ap_drop_{n}"):
+                queue.pop(n)
+                st.rerun()
+            return
+        live.done()
         photo["read"] = True
         photo["photo_no"] = photo_no
         state["readings"].append({"photo_no": photo_no, "name": photo["name"], "model": model,
@@ -436,6 +442,8 @@ def _review_step(state):
     review = state["review"]
 
     k = state["k"]
+    if k == "ap":
+        _steps(2)
     # Forget widget values the voice fix changed, so they redraw from the updated cards.
     for key in st.session_state.pop(f"{k}_pending", {}):
         st.session_state.pop(key, None)
@@ -514,21 +522,32 @@ def _build_review(state):
     model = sheets.get_settings()["model_receipts"]
     if state["k"] == "ap":
         info = receipts.summarize([r["reading"] for r in state["readings"]])
-    with st.spinner("Working out the items…"):
-        try:
-            result = receipts.interpret(model, info["store"], info["source_type"],
-                                        state["merged"], records.items())
-        except GeminiError as ex:
-            st.error(f"Couldn't work out the items: {ex}")
-            if st.button("Try again", type="primary"):
-                st.rerun()
-            return
+    product_refs = records.products_prompt_lines()
+    bar = st.empty()
+    with bar:
+        _steps(1)
+    live = _LiveItems(st.empty(), state["merged"])
+    try:
+        result = receipts.interpret(model, info["store"], info["source_type"],
+                                    state["merged"], records.items(), product_refs, on_text=live)
+    except GeminiError as ex:
+        live.done()
+        st.error(f"Couldn't work out the items: {ex}")
+        if st.button("Try again", type="primary"):
+            st.rerun()
+        return
+    live.done()
+    bar.empty()
     state["interpretation"] = (model, result)
 
     merged = state["merged"]
     known = {records.norm(i["name"]): i for i in records.items()}
     cards = []
     for it in result.get("items", []):
+        same = product_refs.get(it.get("product_ref") or "")
+        if same:  # a product you already have: same name (so it's reused), item and pack size
+            it.update(product=same["name"], brand=same.get("brand") or it.get("brand"),
+                      item=same.get("item") or it.get("item"))
         existing = known.get(records.norm(it.get("item")))
         cards.append({
             "uid": uuid.uuid4().hex[:8],
@@ -548,6 +567,11 @@ def _build_review(state):
             "receipt_text": " / ".join(str(merged[i].get("text", "")) for i in it.get("lines", [])
                                        if isinstance(i, int) and 0 <= i < len(merged)),
         })
+        pack = _num((same or {}).get("pack_size"), None)
+        if pack:  # receipt price is the line total, so only the amount changes
+            cards[-1].update(packs=_num(it.get("packs"), None) or 1.0, pack_size=pack, pack_checked=True,
+                             unit=same.get("pack_unit") or cards[-1]["unit"])
+            _pack_math(cards[-1])
     skipped = []
     for s in result.get("skipped", []):
         lines = [merged[i] for i in s.get("lines", []) if isinstance(i, int) and 0 <= i < len(merged)]
@@ -751,3 +775,79 @@ def _parse_date(text):
         return dt.date.fromisoformat(str(text))
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------- live progress (never slows the AI)
+
+def _steps(active):
+    """📷 Photos → 🧾 Items → ✅ Review, the current step highlighted."""
+    names = ["📷 Photos", "🧾 Items", "✅ Review"]
+    st.markdown(" → ".join(f":green-badge[{n} ✓]" if i < active else f":blue-badge[**{n}**]" if i == active
+                           else f":gray-badge[{n}]" for i, n in enumerate(names)))
+
+
+def _chip(text, color="gray"):
+    text = re.sub(r"[\[\]]", "", str(text)).replace("$", "\\$").strip()[:40]
+    return f":{color}-badge[{text}]" if text else ""
+
+
+def _strings(key, text):
+    """Every complete "key": "value" string in a partial JSON reply."""
+    out = []
+    for m in re.findall(r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"' % key, text):
+        try:
+            out.append(json.loads(f'"{m}"'))
+        except ValueError:
+            out.append(m)
+    return out
+
+
+class _Live:
+    """Redraws one placeholder from the AI's reply as it streams in, at most 4 times a second."""
+
+    def __init__(self, box):
+        self.box, self.last = box, 0.0
+        self.draw("")
+
+    def __call__(self, text):
+        if time.time() - self.last >= 0.25:
+            self.last = time.time()
+            self.draw(text)
+
+    def done(self):
+        self.box.empty()
+
+
+class _LiveLines(_Live):
+    """Reading a receipt photo: each line appears as a chip as soon as the AI writes it."""
+
+    def __init__(self, box, photo_no):
+        self.photo_no = photo_no
+        super().__init__(box)
+
+    def draw(self, text):
+        lines = _strings("text", text)
+        with self.box.container(border=True):
+            st.markdown(f"📷 **Reading photo {self.photo_no}** · {len(lines)} lines so far")
+            if lines:
+                st.markdown(" ".join(_chip(l) for l in lines[-18:]))
+
+
+class _LiveItems(_Live):
+    """Turning lines into items: a real progress bar (receipt lines covered so far) and item chips."""
+
+    def __init__(self, box, merged):
+        self.item_lines = {n for n, l in enumerate(merged) if l.get("kind") == "item"}
+        super().__init__(box)
+
+    def draw(self, text):
+        covered = {int(n) for group in re.findall(r'"lines"\s*:\s*\[([\d,\s]*)', text)
+                   for n in re.findall(r"\d+", group)} & self.item_lines
+        names, emojis = _strings("item", text), _strings("emoji", text)
+        total = max(len(self.item_lines), 1)
+        with self.box.container(border=True):
+            st.progress(min(len(covered) / total, 1.0),
+                        text=f"🧾 Working out the items · {len(covered)} of {len(self.item_lines)} lines")
+            if names:
+                st.markdown(" ".join(_chip(f"{emojis[i] if i < len(emojis) else ''} {n}", "green")
+                                     for i, n in enumerate(names)))
