@@ -11,8 +11,8 @@ def render():
     st.title("History & undo")
 
     st.subheader("Recent purchases")
-    st.caption("Delete erases a purchase from your Sheet completely: its items, any changes to them, "
-               "and items or products nothing else uses. Use it for test entries.")
+    st.caption("Delete erases a purchase and any changes to it. Products you've confirmed "
+               "(info, pack size, barcode, nicknames, photo) are kept for next time.")
     purchases = records.recent_purchases(20)
     if not purchases:
         st.caption("Nothing yet.")

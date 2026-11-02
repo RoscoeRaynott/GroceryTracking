@@ -345,18 +345,26 @@ def recent_purchases(limit=20):
 
 
 def delete_purchase(purchase_id):
-    """Erase a purchase completely (for test entries): its batches, their events, its AI readings,
-    and any item or product that nothing else uses any more."""
+    """Erase a purchase (e.g. a test entry): its batches, their events and its AI readings.
+
+    Products you've confirmed (info, pack size, barcode, nicknames or a photo) are true facts and
+    stay, with their items. Only bare leftovers that nothing else uses are removed."""
     batch_ids = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("purchase_id") == purchase_id}
     sheets.remove_rows("events", lambda r: r.get("batch_id") in batch_ids)
     sheets.remove_rows("batches", lambda r: r.get("purchase_id") == purchase_id)
     sheets.remove_rows("ai_readings", lambda r: r.get("purchase_id") == purchase_id)
 
     batches = sheets.read_tab("batches")
-    used_items = {b.get("item_id") for b in batches}
     used_products = {b.get("product_id") for b in batches}
-    sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products)
+    sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products and not worth_keeping(r))
+    used_items = {b.get("item_id") for b in batches} | {p.get("item_id") for p in sheets.read_tab("products")}
     sheets.remove_rows("items", lambda r: r.get("item_id") not in used_items)
+
+
+def worth_keeping(product):
+    """A product holding anything confirmed: looked-up or label info, pack size, barcode, nicknames, photo."""
+    return bool(product.get("info_status") or product.get("pack_size") or product.get("barcode")
+                or product.get("nicknames") or product.get("photo_url"))
 
 
 def products():

@@ -343,6 +343,7 @@ _Status: gathering requirements. No code until the plan is approved._
   - Pack size not known yet: the card shows "N packs · pack size?". The product appears in Needs info, and once its size is found, those purchases become packs × size.
   - The review card shows the math as a badge (`5 × 6 gal`). Changing packs (in Details or by voice) recalculates the amount and price.
   - New liquids are measured in **mL**, except drinking water and milk in **gal**.
+- **Deleting a purchase keeps what you confirmed (decided):** History → Delete removes the purchase and its finished/waste records. A product with confirmed info, pack size, barcode, nicknames or a photo is kept, along with its item, and reused the next time you buy it. Only bare leftovers (e.g. a misheard test entry) are removed.
 - **After a lookup, everything follows (decided):**
   - Saving a match always shows **"1 pack = how many {unit}?"**, prefilled from the lookup and editable. It also lists the purchases it will change (e.g. "1 ml → 2,839 ml").
   - Saving updates the product (info, photo, pack size, barcode) and its purchases (amount and unit). Pantry, Insights, lifespans, warnings and best price are all calculated from those rows, so they follow.
