@@ -51,6 +51,7 @@ def _products(item):
                 product_ui.photo(p, item.get("emoji", ""), width=56, item=item)
                 st.markdown(f"**{p['name']}**  \n:gray[{p.get('brand', '')}]")
             product_ui.nicknames(p, f"ins_nick_{p['product_id']}")
+            product_ui.merge(p, f"ins_merge_{p['product_id']}")
 
 
 def _picture(item):

@@ -98,6 +98,7 @@ def _fill(p):
             st.rerun()
     with st.expander("Nicknames"):
         product_ui.nicknames(p, f"ni_nick_{pid}")
+    product_ui.merge(p, f"ni_merge_{pid}")
 
 
 def _update_purchases(p):
