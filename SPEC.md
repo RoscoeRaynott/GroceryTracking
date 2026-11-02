@@ -367,6 +367,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - Undoing an older change never brings back a batch that was deleted since.
   - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
 
+- **Look up all (built):** a button at the top of Needs info searches every product still missing size or label info, **up to 10 at once**, using each product's own search text (including edits).
+  - A progress bar shows "7 of 12 searched · ✅ found · ⚠️ not found".
+  - Results wait in each product's card (marked ✅, opened) for **Yes / Not this**, exactly like a single lookup. Nothing is saved automatically.
+  - Not-found products are marked ⚠️ and can be retried.
 - **Merge duplicate products (built):** "Same as a product I have" on every product in Insights → Products, and in Needs info.
   - Pick the right product, see a preview (purchases that move, details and nicknames it brings), then tap Merge.
   - The kept product keeps its own details. Empty ones (photo, info, pack size, barcode…) are filled from the duplicate, and nicknames are combined.

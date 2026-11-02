@@ -1,6 +1,9 @@
 """Products still missing their pack size or label info; look each one up when you have a moment."""
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
 from grocery import camera, photos, productinfo, records, sheets
 from grocery.gemini import GeminiError
@@ -21,11 +24,62 @@ def render():
     if not products:
         st.success("Nothing missing.")
         return
+    waiting = sum(1 for p in products if st.session_state.get(f"ni_found_{p['product_id']}"))
+    if "ni_all_done" in st.session_state and not waiting:
+        del st.session_state["ni_all_done"]  # every result has been answered
+    if "ni_all_done" in st.session_state:
+        found, missed = st.session_state["ni_all_done"]
+        st.markdown(f":green-badge[✅ {found} found, check each below] "
+                    + (f":orange-badge[⚠️ {missed} not found]" if missed else ""))
 
+    _look_up_all(products)
     for p in products:
         tags = " ".join(TAGS[m] for m in p["missing"])
-        with st.expander(f"{tags}  {p.get('emoji', '')} {p['name']}".strip()):
+        pid = p["product_id"]
+        mark = "✅ " if st.session_state.get(f"ni_found_{pid}") else "⚠️ " if st.session_state.get(f"ni_miss_{pid}") else ""
+        with st.expander(f"{mark}{tags}  {p.get('emoji', '')} {p['name']}".strip(),
+                         expanded=bool(st.session_state.get(f"ni_found_{pid}"))):
             _fill(p)
+
+
+MAX_AT_ONCE = 10
+
+
+def _look_up_all(products):
+    """Look up every product still missing size or label info, up to 10 at a time, with a progress bar.
+    Results wait in each product's card for your Yes, exactly like a single lookup."""
+    todo = [p for p in products if set(p["missing"]) & {"size", "ingredients"}
+            and not st.session_state.get(f"ni_found_{p['product_id']}")]
+    if len(todo) < 2:
+        return
+    if not st.button(f"Look up all ({len(todo)})", icon=":material/travel_explore:", type="primary", width="stretch",
+                     help="Searches each product with its own search text, up to 10 at once. "
+                          "Nothing is saved until you tap Yes on each one."):
+        return
+    model = sheets.get_settings()["model_lookup"]
+    jobs = {p["product_id"]: (st.session_state.get(f"ni_q_{p['product_id']}") or records.product_search_text(p),
+                              records.item_unit(p["item_id"])) for p in todo}
+    bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} searched")
+    ctx = get_script_run_ctx()
+    found = missed = 0
+    with ThreadPoolExecutor(max_workers=MAX_AT_ONCE, initializer=lambda: add_script_run_ctx(ctx=ctx)) as pool:
+        running = {pool.submit(productinfo.web_lookup, model, query, unit): pid for pid, (query, unit) in jobs.items()}
+        for n, job in enumerate(as_completed(running), start=1):
+            pid = running[job]
+            st.session_state.pop(f"ni_miss_{pid}", None)
+            try:
+                info = job.result()
+                st.session_state[f"ni_found_{pid}"] = dict(info, barcode=info.get("barcode", ""))
+                found += 1
+            except productinfo.NotFound as ex:
+                st.session_state[f"ni_miss_{pid}"] = f"Not found. {ex}"
+                missed += 1
+            except Exception as ex:
+                st.session_state[f"ni_miss_{pid}"] = f"Search failed: {ex}"
+                missed += 1
+            bar.progress(n / len(jobs), text=f"🔎 {n} of {len(jobs)} searched · ✅ {found} found · ⚠️ {missed} not found")
+    st.session_state["ni_all_done"] = (found, missed)
+    st.rerun()
 
 
 def _fill(p):
@@ -43,6 +97,8 @@ def _fill(p):
     if found:
         _confirm(p, found)
         return
+    if st.session_state.get(f"ni_miss_{pid}"):
+        st.warning(st.session_state[f"ni_miss_{pid}"] + " Edit the search text, or try the label photo.")
 
     # One search fills both the pack size and the label info.
     if st.button("Look it up online", key=f"ni_go_{pid}", icon=":material/travel_explore:", type="primary",
@@ -132,6 +188,7 @@ def _lookup(pid, fetch, barcode=""):
 
 
 def _found(pid, info, barcode=""):
+    st.session_state.pop(f"ni_miss_{pid}", None)
     st.session_state[f"ni_found_{pid}"] = dict(info, barcode=barcode or info.get("barcode", ""))
     st.rerun()
 
