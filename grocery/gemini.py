@@ -58,13 +58,84 @@ def list_models(key):
     )
 
 
-def generate_json(task, model, prompt, media=()):
+def generate_json(task, model, prompt, media=(), on_text=None):
     """Send a prompt plus media [(bytes, mime type)] and return the parsed JSON reply.
 
+    With on_text, the reply is streamed and on_text(reply so far) is called as pieces arrive, so the
+    screen can show progress; it takes no longer than waiting for the whole reply.
     Every call is logged to the ai_log tab (model, tokens, seconds).
     """
+    if on_text:
+        try:
+            return _stream(task, model, prompt, media, on_text)
+        except _StreamUnavailable:
+            pass  # fall back to the plain call
     result, _ = _generate(task, model, prompt, media, search=False)
     return result
+
+
+class _StreamUnavailable(Exception):
+    """Streaming failed before any text arrived (and not for quota): use the plain call instead."""
+
+
+def _stream(task, model, prompt, media, on_text):
+    key = api_key()
+    if not key:
+        raise GeminiError("No Gemini API key in Streamlit secrets.")
+    parts = [{"text": prompt}]
+    for data, mime in media:
+        parts.append({"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}})
+    body = {"contents": [{"role": "user", "parts": parts}],
+            "generationConfig": {"responseMimeType": "application/json"}}
+    req = urllib.request.Request(
+        f"{API}/models/{model}:streamGenerateContent?alt=sse", data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json", "x-goog-api-key": key},
+    )
+    started = time.time()
+    usage, ok, text, finish = {}, False, "", None
+    try:
+        for attempt in range(2):
+            try:
+                resp = urllib.request.urlopen(req, timeout=180)
+                break
+            except urllib.error.HTTPError as ex:
+                if ex.code in RETRY_CODES and attempt == 0:
+                    time.sleep(3)
+                    continue
+                if ex.code == 429:
+                    detail = ex.read().decode("utf-8", "replace")[:500]
+                    raise GeminiError(f"Gemini {model} returned HTTP 429: {detail}") from ex
+                raise _StreamUnavailable() from ex
+            except urllib.error.URLError as ex:
+                raise _StreamUnavailable() from ex
+        with resp:
+            for raw in resp:  # server-sent events: "data: {...}" lines
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                chunk = json.loads(line[5:])
+                usage = chunk.get("usageMetadata") or usage
+                candidate = (chunk.get("candidates") or [{}])[0]
+                finish = candidate.get("finishReason") or finish
+                piece = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])
+                                if not p.get("thought"))
+                if piece:
+                    text += piece
+                    try:
+                        on_text(text)
+                    except Exception:
+                        pass  # a screen update must never break the reading
+        if not text:
+            raise GeminiError(f"Gemini {model} returned no text ({finish}).")
+        result = _parse_json(text)
+        ok = True
+        return result
+    except (OSError, ValueError) as ex:
+        if not text:
+            raise _StreamUnavailable() from ex
+        raise GeminiError(f"Gemini's reply stopped part-way: {ex}") from ex
+    finally:
+        _log(task, model, usage, time.time() - started, ok)
 
 
 def search_json(task, model, prompt):
