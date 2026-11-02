@@ -592,9 +592,9 @@ def _card(c, review, known, open_by_item, open_fields):
             amount = f"{c['packs']:g} pack{'s' if c['packs'] != 1 else ''}"
             badges.insert(0, ":orange-badge[pack size?]")
         else:
-            amount = f"{c['units']:g} {c['unit']}"
+            amount = f"{c['units']:,g} {c['unit']}"
             if c.get("packs") is not None and c["packs"] != 1:
-                badges.insert(0, f":blue-badge[{c['packs']:g} × {c['pack_size']:g} {c['unit']}]")
+                badges.insert(0, f":blue-badge[{c['packs']:g} × {c['pack_size']:,g} {c['unit']}]")
         with st.container(horizontal=True, vertical_alignment="center"):
             st.markdown(f"{title} · {amount} · {_money(c['price'])} {' '.join(badges)}")
             if st.button("", key=f"it_{uid}_del", icon=":material/delete:", type="tertiary",
