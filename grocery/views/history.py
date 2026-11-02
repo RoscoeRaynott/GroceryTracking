@@ -25,7 +25,7 @@ def render():
                         + ", ".join(f"{b['item']} ({b['units']} {b['unit']})" for b in batches))
             st.caption(f"Added {p.get('created_at', '')} by {p.get('source', '')}")
             if st.session_state.get("hist_confirm") == pid:
-                st.warning("Delete this purchase and everything recorded about it?")
+                st.warning("Delete this purchase? Products you've confirmed (info, pack size, photo…) are kept.")
                 with st.container(horizontal=True):
                     if st.button("Yes, delete it", key=f"hist_yes_{pid}", type="primary"):
                         with st.spinner("Deleting…"):
