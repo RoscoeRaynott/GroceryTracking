@@ -37,10 +37,15 @@ def items():
     return sheets.read_tab("items")
 
 
+def live_batches():
+    """Every purchased batch except deleted ones (deleted rows stay in the Sheet so Undo works)."""
+    return [b for b in sheets.read_tab("batches") if b.get("status") != "deleted"]
+
+
 def stores():
     """Distinct store names seen so far."""
     names = []
-    for b in sheets.read_tab("batches"):
+    for b in live_batches():
         if b.get("store") and b["store"] not in names:
             names.append(b["store"])
     return names
@@ -236,7 +241,7 @@ def products_needing_info():
     "resize" = [(batch, new units)]), "ingredients" for foods with no label info yet.
     """
     tracked = {i["item_id"]: i for i in items() if i.get("kind") in ("Food", "Household")}
-    batches = sheets.read_tab("batches")
+    batches = live_batches()
     out = []
     for p in sheets.read_tab("products"):
         item = tracked.get(p["item_id"])
@@ -244,7 +249,9 @@ def products_needing_info():
             continue
         missing = []
         mine = [b for b in batches if b.get("product_id") == p["product_id"]]
-        if not p.get("pack_size") and mine and all(_waiting_for_pack_size(b) for b in mine):
+        if not mine:
+            continue  # nothing bought (or all of it deleted): nothing to fill in now
+        if not p.get("pack_size") and all(_waiting_for_pack_size(b) for b in mine):
             missing.append("size")
         resize = _to_resize(mine, _float(p.get("pack_size")), p.get("pack_unit"))
         if resize:
@@ -277,14 +284,14 @@ def product_by_barcode(barcode):
 
 
 def last_store():
-    rows = sheets.read_tab("batches")
+    rows = live_batches()
     return rows[-1]["store"] if rows else ""
 
 
 def purchase_history(limit=60):
     """Most recent batch per (item, store, product), newest first, for voice quick-add."""
     seen, out = set(), []
-    rows = [b for b in sheets.read_tab("batches") if b.get("status") != "deleted"]
+    rows = live_batches()
     for b in sorted(rows, key=lambda b: (b.get("purchased_on", ""), b.get("created_at", "")), reverse=True):
         key = (b.get("item_id"), norm(b.get("store")), norm(b.get("product")))
         if key in seen:
@@ -298,7 +305,7 @@ def purchase_history(limit=60):
 
 def product_search_text(p):
     """Everything known about a product, for an exact web search."""
-    latest = max((b for b in sheets.read_tab("batches") if b.get("product_id") == p["product_id"]),
+    latest = max((b for b in live_batches() if b.get("product_id") == p["product_id"]),
                  key=lambda b: b.get("purchased_on", ""), default={})
     parts = [p.get("brand", ""), p["name"]]
     if latest:
@@ -327,7 +334,7 @@ def canonical_store(name):
 def purchases():
     """Purchases rebuilt from batches: [(summary dict, [batch rows])], newest first."""
     groups = {}
-    for b in sheets.read_tab("batches"):
+    for b in live_batches():
         groups.setdefault(b.get("purchase_id"), []).append(b)
     out = []
     for pid, rows in groups.items():
@@ -342,29 +349,6 @@ def purchases():
 
 def recent_purchases(limit=20):
     return purchases()[:limit]
-
-
-def delete_purchase(purchase_id):
-    """Erase a purchase (e.g. a test entry): its batches, their events and its AI readings.
-
-    Products you've confirmed (info, pack size, barcode, nicknames or a photo) are true facts and
-    stay, with their items. Only bare leftovers that nothing else uses are removed."""
-    batch_ids = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("purchase_id") == purchase_id}
-    sheets.remove_rows("events", lambda r: r.get("batch_id") in batch_ids)
-    sheets.remove_rows("batches", lambda r: r.get("purchase_id") == purchase_id)
-    sheets.remove_rows("ai_readings", lambda r: r.get("purchase_id") == purchase_id)
-
-    batches = sheets.read_tab("batches")
-    used_products = {b.get("product_id") for b in batches}
-    sheets.remove_rows("products", lambda r: r.get("product_id") not in used_products and not worth_keeping(r))
-    used_items = {b.get("item_id") for b in batches} | {p.get("item_id") for p in sheets.read_tab("products")}
-    sheets.remove_rows("items", lambda r: r.get("item_id") not in used_items)
-
-
-def worth_keeping(product):
-    """A product holding anything confirmed: looked-up or label info, pack size, barcode, nicknames, photo."""
-    return bool(product.get("info_status") or product.get("pack_size") or product.get("barcode")
-                or product.get("nicknames") or product.get("photo_url"))
 
 
 def products():
@@ -508,7 +492,7 @@ def store_from_brands(texts):
 
 def mark_size_ok(product_id):
     """Stop asking for a pack size (sold by weight, or the saved quantity is already right)."""
-    latest = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
+    latest = [b for b in live_batches() if b.get("product_id") == product_id]
     size = latest[-1].get("units") if latest else "1"
     unit = latest[-1].get("unit") if latest else "each"
     sheets.update_rows("products", "product_id", {product_id: {"pack_size": size or "1", "pack_unit": unit}})
