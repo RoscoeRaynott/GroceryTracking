@@ -17,6 +17,8 @@
              font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 10px; }
     #view { position: relative; display: none; border-radius: 12px; overflow: hidden; background: #000; }
     video { width: 100%; display: block; max-height: 62vh; object-fit: cover; }
+    /* Photo mode (receipts, labels): tall, and the whole frame is shown so you see exactly what's captured. */
+    body.photo video { height: 72vh; max-height: 72vh; object-fit: contain; }
     #frame { position: absolute; left: 10%; right: 10%; top: 32%; bottom: 32%; border: 3px solid rgba(255,255,255,.85);
              border-radius: 10px; transition: border-color .15s; pointer-events: none; }
     #frame.hit { border-color: #2ECC71; }
@@ -77,14 +79,17 @@
 
     async function start() {
       try {
+        // Photos are portrait (receipts are tall and narrow); barcode scanning stays landscape.
+        const photo = mode === "photo";
         stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-          facingMode: { ideal: "environment" }, width: { ideal: mode === "photo" ? 3840 : 1920 },
-          height: { ideal: mode === "photo" ? 2160 : 1080 } } });
+          facingMode: { ideal: "environment" }, width: { ideal: photo ? 2160 : 1920 },
+          height: { ideal: photo ? 3840 : 1080 }, aspectRatio: { ideal: photo ? 9 / 16 : 16 / 9 } } });
       } catch (err) {
         say("Camera blocked. Allow it for this site in Chrome, then try again.");
         $("bar").style.display = "flex";
         return;
       }
+      document.body.classList.toggle("photo", mode === "photo");
       video.srcObject = stream;
       await video.play();
       running = true;
@@ -181,7 +186,8 @@
         // Full camera resolution where the browser allows it (Chrome on Android does).
         if ("ImageCapture" in window) {
           const bmp = await new ImageCapture(stream.getVideoTracks()[0]).grabFrame();
-          source = bmp; w = bmp.width; h = bmp.height;
+          // Use it only if it's turned the same way as the preview; otherwise keep the preview frame.
+          if ((bmp.width > bmp.height) === (w > h)) { source = bmp; w = bmp.width; h = bmp.height; }
         }
       } catch (e) {}
       const scale = Math.min(1, MAX_DIM / Math.max(w, h));
