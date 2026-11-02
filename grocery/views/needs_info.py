@@ -107,7 +107,7 @@ def _fill(p):
         _lookup(pid, lambda: productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
                                                     records.item_unit(p["item_id"])))
 
-    tab_label, tab_barcode, tab_web = st.tabs(["Label photo", "Barcode", "Edit search"])
+    tab_web, tab_label, tab_barcode = st.tabs(["Edit search", "Label photo", "Barcode"])
     with tab_label:
         st.caption("Photograph the ingredients list and Nutrition Facts panel (1–3 photos). This always wins.")
         snapped = camera.photo(f"ni_labcam_{pid}", "Open camera to snap the label")
