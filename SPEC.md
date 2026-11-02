@@ -367,7 +367,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - Undoing an older change never brings back a batch that was deleted since.
   - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
 
-- **To-do (later):** a "Same as a product I have" button in Needs info to merge duplicate products (e.g. the same Kirkland water saved twice).
+- **Merge duplicate products (built):** "Same as a product I have" on every product in Insights → Products, and in Needs info.
+  - Pick the right product, see a preview (purchases that move, details and nicknames it brings), then tap Merge.
+  - The kept product keeps its own details. Empty ones (photo, info, pack size, barcode…) are filled from the duplicate, and nicknames are combined.
+  - All purchases move to it (and to its item). Purchases still saved as "1" get its pack size. The duplicate row is then removed.
 - **To-do (later, with the visual Pantry redesign):** one Pantry card per item (e.g. "💧 Purified water · 24 gal · 2 purchases"). Tapping it lists each purchase (date, product, amount), each still with its own Finished / Some went bad, because purchases of the same item can end differently (an unopened older milk stays good while a newer opened one goes bad). Until then: **one card per purchase (decided)**.
 
 ## Sheet layout v2 (decided)

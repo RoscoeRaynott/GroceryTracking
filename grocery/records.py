@@ -355,6 +355,39 @@ def products():
     return sheets.read_tab("products")
 
 
+MERGE_FILL = ("photo_url", "barcode", "brand", "serving_size", "servings_per_pack", "ingredients", "nutrients_json",
+              "abv", "info_source", "info_url", "info_status", "pack_size", "pack_unit", "packaged")
+
+
+def merge_preview(from_id, into_id):
+    """What merging one product into another would do: purchases moved, and what it brings along."""
+    rows = {p["product_id"]: p for p in products()}
+    a, b = rows[from_id], rows[into_id]
+    moved = [x for x in sheets.read_tab("batches") if x.get("product_id") == from_id]
+    brings = [col for col in MERGE_FILL if a.get(col) and not b.get(col)]
+    new_names = [n for n in nicknames(a) if norm(n) not in {norm(m) for m in nicknames(b)} | {norm(b["name"])}]
+    return {"from": a, "into": b, "moved": moved, "brings": brings, "nicknames": new_names}
+
+
+def merge_products(from_id, into_id):
+    """Two rows that are the same product: keep `into`, move every purchase of `from` to it, fill its
+    empty details (photo, info, pack size, barcode…) from `from`, add its nicknames, then drop `from`."""
+    plan = merge_preview(from_id, into_id)
+    a, b = plan["from"], plan["into"]
+    change = {col: a[col] for col in plan["brings"]}
+    if plan["nicknames"]:
+        change["nicknames"] = "; ".join(nicknames(b) + plan["nicknames"])
+    sheets.update_rows("products", "product_id", {into_id: change})
+    sheets.update_rows("batches", "batch_id", {
+        x["batch_id"]: {"product_id": into_id, "product": b["name"], "item_id": b["item_id"], "item": b.get("item", "")}
+        for x in plan["moved"]})
+    sheets.remove_rows("products", lambda r: r.get("product_id") == from_id)
+    size = _float(b.get("pack_size") or change.get("pack_size"))
+    if size:  # purchases of the merged product that were waiting for a pack size get it now
+        apply_pack_size(into_id, size, b.get("pack_unit") or change.get("pack_unit") or "")
+    return plan
+
+
 def nicknames(product):
     return [n.strip() for n in str(product.get("nicknames", "")).split(";") if n.strip()]
 

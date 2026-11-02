@@ -66,3 +66,43 @@ def nicknames(product, key):
         st.session_state[f"{key}_open"] = False
         st.toast("Nickname saved: " + ", ".join(n.strip() for n in new))
         st.rerun()
+
+
+LABELS = {"photo_url": "photo", "barcode": "barcode", "brand": "brand", "serving_size": "serving size",
+          "servings_per_pack": "servings", "ingredients": "ingredients", "nutrients_json": "nutrition",
+          "abv": "ABV", "info_source": "info source", "info_url": "link", "info_status": "info checked",
+          "pack_size": "pack size", "pack_unit": "pack unit", "packaged": "packaged"}
+
+
+def merge(product, key):
+    """“Same as a product I have”: fold this duplicate into the right product, after a preview."""
+    others = [p for p in records.products() if p["product_id"] != product["product_id"]]
+    if not others:
+        return
+    # Same item first: that's where duplicates usually are.
+    others.sort(key=lambda p: (p.get("item_id") != product.get("item_id"), p.get("item", ""), p["name"]))
+    with st.popover("Same as a product I have", icon=":material/merge:", key=f"{key}_pop"):
+        st.caption(f"Merge **{product['name']}** into the product it really is. "
+                   "Its purchases, nicknames and any missing details move over.")
+        target = st.selectbox("It's the same as", others, index=None, key=f"{key}_pick",
+                              format_func=lambda p: f"{p['name']}  ·  {p.get('item', '')}",
+                              placeholder="Pick the product")
+        if not target:
+            return
+        plan = records.merge_preview(product["product_id"], target["product_id"])
+        with st.container(horizontal=True, vertical_alignment="center"):
+            photo(product, width=40)
+            st.markdown("→")
+            photo(target, width=40)
+            st.markdown(f"**{target['name']}**")
+        n = len(plan["moved"])
+        st.markdown(" ".join(
+            [f":blue-badge[{n} purchase{'s' if n != 1 else ''} move]"]
+            + [f":green-badge[+ {LABELS.get(c, c)}]" for c in plan["brings"] if c not in ("pack_unit", "info_source")]
+            + [f":violet-badge[+ “{nm}”]" for nm in plan["nicknames"]]
+            + [f":orange-badge[item → {target.get('item', '')}]"] * (target.get("item_id") != product.get("item_id"))))
+        st.caption(f"“{product['name']}” is then removed; {target['name']} keeps its own details where both have one.")
+        if st.button("Merge", key=f"{key}_go", type="primary", icon=":material/merge:"):
+            records.merge_products(product["product_id"], target["product_id"])
+            st.toast(f"Merged into {target['name']}")
+            st.rerun()
