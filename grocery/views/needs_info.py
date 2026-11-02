@@ -2,7 +2,7 @@
 
 import streamlit as st
 
-from grocery import photos, productinfo, records, sheets
+from grocery import camera, photos, productinfo, records, sheets
 from grocery.gemini import GeminiError
 from grocery.views import product_ui
 from grocery.views.common import back_home
@@ -54,7 +54,11 @@ def _fill(p):
     tab_label, tab_barcode, tab_web = st.tabs(["Label photo", "Barcode", "Edit search"])
     with tab_label:
         st.caption("Photograph the ingredients list and Nutrition Facts panel (1–3 photos). This always wins.")
-        photos.pick_photos(f"ni_label_{pid}", "Tap to photograph the label", "Ingredients + Nutrition Facts")
+        snapped = camera.photo(f"ni_labcam_{pid}", "Open camera to snap the label")
+        if snapped:
+            st.session_state.setdefault(f"ni_label_{pid}", []).append(snapped)
+        with st.expander("Or pick label photos from your gallery"):
+            photos.pick_photos(f"ni_label_{pid}", "Tap to add label photos", "Ingredients + Nutrition Facts")
         queue = st.session_state.get(f"ni_label_{pid}", [])
         if queue:
             st.caption(f"{len(queue)} photo(s) ready")
@@ -69,15 +73,17 @@ def _fill(p):
                     except GeminiError as ex:
                         st.error(f"Couldn't read the label: {ex}")
     with tab_barcode:
-        photos.pick_photos(f"ni_bc_{pid}", "Tap to photograph its barcode")
+        code = camera.barcodes(f"ni_bccam_{pid}", "Scan its barcode")
+        with st.expander("Or pick a barcode photo from your gallery"):
+            photos.pick_photos(f"ni_bc_{pid}", "Tap to add a barcode photo")
         queue = st.session_state.get(f"ni_bc_{pid}", [])
-        if queue and not queue[-1].get("done"):
+        if not code and queue and not queue[-1].get("done"):
             queue[-1]["done"] = True
             code = productinfo.read_barcode(queue[-1]["data"])
             if not code:
                 st.warning("No barcode found in that photo. Try again closer.")
-            else:
-                _lookup(pid, lambda: productinfo.off_by_barcode(code), barcode=code)
+        if code:
+            _lookup(pid, lambda: productinfo.off_by_barcode(code), barcode=code)
     with tab_web:
         query = st.text_area("Search for", value=records.product_search_text(p), key=f"ni_q_{pid}",
                              help="Everything known about this product. Add or fix details to make the search exact.")
