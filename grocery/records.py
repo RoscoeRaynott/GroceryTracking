@@ -450,6 +450,11 @@ def set_pack_varies(product_id, varies):
     sheets.update_rows("products", "product_id", {product_id: {"pack_varies": "yes" if varies else ""}})
 
 
+def set_barcode(product_id, barcode):
+    """A scanned barcode is a fact about the product: save it straight away (it survives an app reload)."""
+    sheets.update_rows("products", "product_id", {product_id: {"barcode": barcode}})
+
+
 def set_bought(batch_id, units, packs=None):
     """Fix how much one purchase was: packs bought (with the product's pack size) or the amount itself."""
     change = {"units": round(units, 4)}

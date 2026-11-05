@@ -45,10 +45,18 @@ def render():
     view = st.segmented_control("Show", ["All", "Needs info"], key=VIEW, label_visibility="collapsed",
                                 format_func=lambda v: v if v == "All" else f"⚠️ Needs info ({len(needs)})") or "All"
     shown = rows if view == "All" else needs
+    scans = st.session_state.get(item_info.SCANS, {})
+    scanned = [r for r in rows if r["product"] and r["product"]["product_id"] in scans]
+    if scans:
+        photos = sum(len(q.get("photos", [])) for q in scans.values())
+        st.markdown(f":blue-badge[📷 {len(scans)} item{'s' if len(scans) != 1 else ''} scanned"
+                    + (f" · {photos} photo{'s' if photos != 1 else ''}" if photos else "") + "] :gray[waiting for a lookup]")
     if view != "All":
-        if not needs:
+        if not needs and not scanned:
             st.success("Everything has its info. 🎉")
-        _look_up_all(needs)
+        _look_up_all(needs + [r for r in scanned if r not in needs])
+    elif scanned:
+        _look_up_all(scanned, label="🔎 Look up scanned")
     st.caption("Tap an item to see everything about it, fix it, mark it finished or say some went bad.")
     st.markdown(TILE_CSS, unsafe_allow_html=True)
 
@@ -104,7 +112,7 @@ def _tile_html(r):
     warn = "⚠️ " if r["level"] == "red" else ""
     pid = b.get("product_id")
     found = st.session_state.get(f"ii_redo_{pid}") if pid else None
-    ready = "✅ " if found and not found.get("missing") else ""
+    ready = "✅ " if found and not found.get("missing") else "📷 " if pid in st.session_state.get(item_info.SCANS, {}) else ""
     checks = r["checks"]
     pct = round(100 * sum(1 for _, ok in checks if ok) / len(checks)) if checks else 0
     bar_color = COLORS["red" if pct < 40 else "orange" if pct < 80 else "green"][1]
@@ -116,9 +124,11 @@ def _tile_html(r):
 <span style="color:{bar_color};letter-spacing:-1px">{"▰" * filled}{"▱" * (5 - filled)}</span></div></div>"""
 
 
-def _look_up_all(needs):
-    """Search every ticked product still missing something, up to 10 at a time. Each match waits in that
-    item's panel (✅ on its tile) for Yes / Not this; nothing is saved without you."""
+def _look_up_all(needs, label="🔎 Look up all"):
+    """Look up every ticked item at once (up to 10 at a time), each the best way it can: its waiting photos,
+    else its barcode (scanned now or saved before), else its name. Each match waits on its tile (✅) and in its
+    panel for Yes / Not this; nothing is saved without you."""
+    scans = st.session_state.get(item_info.SCANS, {})
     todo, seen = [], set()
     for r in needs:
         p = r["product"]
@@ -127,9 +137,12 @@ def _look_up_all(needs):
                 and not st.session_state.get(f"ii_redo_{p['product_id']}"):
             seen.add(p["product_id"])
             todo.append(r)
+    sharp = sum(1 for r in todo if r["product"]["product_id"] in scans or r["product"].get("barcode"))
     with st.container(horizontal=True, vertical_alignment="center"):
-        go = st.button(f"🔎 Look up all ({len(todo)})", key="ni_all", type="primary", disabled=not todo,
-                       help="Untick items whose names need fixing first. Nothing is saved until you say Yes.")
+        go = st.button(f"{label} ({len(todo)})" + (f" · {sharp} by barcode/photo" if sharp else ""), key="ni_all",
+                       type="primary", disabled=not todo,
+                       help="Each item is looked up the best way it can: photo, then barcode, then name. "
+                            "Up to 10 at once. Nothing is saved until you say Yes.")
         if st.button("Tick all", key="ni_pick_all", type="tertiary"):
             for r in needs:
                 if r["product"]:
@@ -142,17 +155,19 @@ def _look_up_all(needs):
             st.rerun()
     if not go:
         return
-    model = sheets.get_settings()["model_lookup"]
-    jobs = {r["product"]["product_id"]: (st.session_state.get(f"ii_q_{r['product']['product_id']}")
-                                         or records.product_search_text(r["product"]),
-                                         r["product"].get("pack_unit") or r["item"].get("unit") or "each",
-                                         records.lookup_store(r["product"])) for r in todo}
-    bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} searched")
+    settings = sheets.get_settings()
+    jobs = {}
+    for r in todo:  # everything a lookup needs is gathered here, so the parallel lookups don't touch the session
+        p = r["product"]
+        q = scans.get(p["product_id"], {})
+        jobs[p["product_id"]] = (records.product_search_text(p), p.get("pack_unit") or r["item"].get("unit") or "each",
+                                 records.lookup_store(p), q.get("barcode") or p.get("barcode", ""), tuple(q.get("photos", ())))
+    bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} looked up")
     ctx = get_script_run_ctx()
     found = missed = 0
     with ThreadPoolExecutor(max_workers=MAX_AT_ONCE, initializer=lambda: add_script_run_ctx(ctx=ctx)) as pool:
-        running = {pool.submit(productinfo.web_lookup, model, q, unit, store=store): pid
-                   for pid, (q, unit, store) in jobs.items()}
+        running = {pool.submit(productinfo.best_lookup, settings["model_lookup"], settings["model_labels"], *args): pid
+                   for pid, args in jobs.items()}
         for n, job in enumerate(as_completed(running), start=1):
             pid = running[job]
             try:
@@ -164,6 +179,7 @@ def _look_up_all(needs):
             except Exception as ex:
                 st.session_state[f"ii_redo_{pid}"] = {"missing": f"Search failed: {ex}"}
                 missed += 1
-            bar.progress(n / len(jobs), text=f"🔎 {n} of {len(jobs)} searched · ✅ {found} found · ⚠️ {missed} not found")
+            scans.pop(pid, None)  # its photos have been read; the barcode is already saved on the product
+            bar.progress(n / len(jobs), text=f"🔎 {n} of {len(jobs)} looked up · ✅ {found} found · ⚠️ {missed} not found")
     st.toast(f"✅ {found} found — tap each ✅ item to check and save")
     st.rerun()

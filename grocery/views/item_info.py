@@ -146,26 +146,39 @@ def _find_info(product, item):
                              help="Fix or add words to make the search exact")
             with st.popover("📷 Scan", key=f"{key}_scan", help="Scan the barcode, or photograph the label"):
                 got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
-                st.caption("Point at the barcode, or photograph the front (name) or the label.")
+                st.caption("Point at the barcode, or photograph the front (name) or the label. It's saved for "
+                           "🔎 Look up all, so you can go straight to the next item.")
         if go_search:
             with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
                 st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
                     sheets.get_settings()["model_lookup"], st.session_state.get(_k(f"ii_q_{pid}", records.product_search_text(product)))
                     or records.product_search_text(product), unit, store=store))
             _refresh()
-        settings = sheets.get_settings()
-        if got and got[0] == "barcode":
-            with st.spinner("Looking up the barcode, then searching with its exact name…"):
-                st.session_state[key] = _lookup(lambda: productinfo.identify_then_search(
-                    settings["model_lookup"], productinfo.by_barcode(
-                        settings["model_lookup"], got[1], records.product_search_text(product), unit, store), unit, store))
+        # Scanning only saves what was scanned; the lookups run later, all together (Pantry: 🔎 Look up all).
+        if got:
+            queue = st.session_state.setdefault(SCANS, {}).setdefault(pid, {"photos": []})
+            if got[0] == "barcode":
+                records.set_barcode(pid, got[1])
+                queue["barcode"] = got[1]
+                st.toast("Barcode saved · look it up later with 🔎 Look up all")
+            else:
+                queue["photos"].append(got[1]["data"])
+                st.toast(f"Photo saved ({len(queue['photos'])}) · look it up later with 🔎 Look up all")
             _refresh()
-        elif got:  # a photo of the front (name) or the label: read it, then search with what it says
-            with st.spinner("Reading the photo, then searching with its exact name…"):
-                st.session_state[key] = _lookup(lambda: productinfo.identify_then_search(
-                    settings["model_lookup"], productinfo.read_label(settings["model_labels"], [got[1]["data"]]),
-                    unit, store))
-            _refresh()
+        queued = st.session_state.get(SCANS, {}).get(pid)
+        if queued:
+            bits = ([f"barcode {queued['barcode']}"] if queued.get("barcode") else []) + \
+                   ([f"{len(queued['photos'])} photo{'s' if len(queued['photos']) != 1 else ''}"] if queued.get("photos") else [])
+            st.markdown(f":blue-badge[📷 waiting: {' · '.join(bits)}] :gray[looked up with 🔎 Look up all]")
+            with st.container(horizontal=True):
+                if st.button("Look up now", key=f"{key}_now", type="primary"):
+                    with st.spinner("Looking it up…"):
+                        st.session_state[key] = _lookup(lambda: scan_lookup(product, item))
+                    st.session_state[SCANS].pop(pid, None)
+                    _refresh()
+                if st.button("Clear", key=f"{key}_clear", type="tertiary"):
+                    st.session_state[SCANS].pop(pid, None)
+                    _refresh()
         return
     with st.container(border=True):
         if found.get("missing"):
@@ -225,6 +238,21 @@ def _find_info(product, item):
             if st.button("Not this", key=f"{key}_no"):
                 st.session_state.pop(key, None)
                 _refresh()
+
+
+SCANS = "scan_queue"  # {product_id: {"barcode": digits, "photos": [jpeg bytes]}}: scanned, not yet looked up
+
+
+def scan_lookup(product, item):
+    """One product's best lookup: its waiting photos, else its barcode (scanned or saved), else its name."""
+    settings = sheets.get_settings()
+    queued = st.session_state.get(SCANS, {}).get(product["product_id"], {})
+    return productinfo.best_lookup(
+        settings["model_lookup"], settings["model_labels"],
+        st.session_state.get(_k(f"ii_q_{product['product_id']}", records.product_search_text(product)))
+        or records.product_search_text(product),
+        product.get("pack_unit") or item.get("unit") or "each", records.lookup_store(product),
+        queued.get("barcode") or product.get("barcode", ""), queued.get("photos", ()))
 
 
 def _lookup(fetch):
