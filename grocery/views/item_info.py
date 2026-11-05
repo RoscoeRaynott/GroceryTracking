@@ -4,6 +4,7 @@ Opens as a side drawer; tapping outside closes it. It stays open across saves un
 """
 
 import json
+import zlib
 
 import altair as alt
 import pandas as pd
@@ -31,6 +32,12 @@ def profile_bar(checks, compact=False):
         return f":{color}[{'▰' * filled}{'▱' * (5 - filled)}]"
     filled = round(pct / 10)
     return f":{color}[{'▰' * filled}{'▱' * (10 - filled)} **{pct}%**]"
+
+
+def _k(base, *saved):
+    """A widget key tied to the saved values it shows: when they change anywhere (a lookup, voice, another
+    screen), the box starts again from what's saved instead of showing an old value."""
+    return f"{base}_{zlib.crc32(repr(saved).encode()):x}"
 
 
 def open_panel(batch_id):
@@ -134,7 +141,7 @@ def _find_info(product, item):
             go_search = st.button(label, key=f"{key}_go", type="secondary",
                                   help="Search the web and fill in what's missing")
             with st.popover("", icon=":material/edit_note:", key=f"{key}_words", help="Search words"):
-                st.text_area("Search for", value=records.product_search_text(product), key=f"ii_q_{pid}",
+                st.text_area("Search for", value=records.product_search_text(product), key=_k(f"ii_q_{pid}", records.product_search_text(product)),
                              help="Fix or add words to make the search exact")
             with st.popover("📷 Scan", key=f"{key}_scan", help="Scan the barcode, or photograph the label"):
                 got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
@@ -142,8 +149,8 @@ def _find_info(product, item):
         if go_search:
             with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
                 st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
-                    sheets.get_settings()["model_lookup"], st.session_state.get(f"ii_q_{pid}") or
-                    records.product_search_text(product), unit, store=store))
+                    sheets.get_settings()["model_lookup"], st.session_state.get(_k(f"ii_q_{pid}", records.product_search_text(product)))
+                    or records.product_search_text(product), unit, store=store))
             _refresh()
         if got and got[0] == "barcode":
             with st.spinner("Looking up the barcode…"):
@@ -224,14 +231,14 @@ def _bought(batch, product):
         st.caption("What you bought this time")
         if size:
             n = st.number_input("Packs bought", value=float(packs or round(units / size, 2) or 1.0), min_value=0.0,
-                                step=1.0, format="%g", key=f"ii_packs_bought_{bid}")
+                                step=1.0, format="%g", key=_k(f"ii_packs_bought_{bid}", units, packs, size))
             st.caption(f"= {n:g} × {amount_text(size, unit)} = **{amount_text(n * size, unit)}**")
             if abs(n * size - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
                 records.set_bought(bid, n * size, n)
                 st.toast(f"Bought: {amount_text(n * size, unit)}")
                 _refresh()
         else:
-            new = amount_input("Amount bought", units, unit, key=f"ii_amount_bought_{bid}")
+            new = amount_input("Amount bought", units, unit, key=_k(f"ii_amount_bought_{bid}", units))
             if new is not None and abs(new - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
                 records.set_bought(bid, new)
                 st.toast(f"Bought: {amount_text(new, unit)}")
@@ -309,7 +316,7 @@ def _kept(item):
     with st.popover(label, key=f"ii_keptpop_{item['item_id']}"):
         st.caption("Every time you buy it")
         kind = item.get("kind") if item.get("kind") in KINDS else "Food"
-        new_kind = st.segmented_control("Kind", KINDS, default=kind, key=f"ii_kind_{item['item_id']}",
+        new_kind = st.segmented_control("Kind", KINDS, default=kind, key=_k(f"ii_kind_{item['item_id']}", kind),
                                         format_func=lambda k: {"Food": "🍎 Food", "Household": "🧴 Household",
                                                                "One-time": "📦 One-time"}.get(k, k),
                                         help="Only food has ingredients and nutrition to fill in")
@@ -317,10 +324,10 @@ def _kept(item):
             records.set_item(item["item_id"], kind=new_kind, tracked="no" if new_kind == "One-time" else "yes")
             st.toast(f"{item['name']}: {new_kind}")
             _refresh()
-        choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"ii_kept_{item['item_id']}",
+        choice = st.segmented_control("Kept in", STORAGE, default=current, key=_k(f"ii_kept_{item['item_id']}", current),
                                       format_func=lambda s: f"{PLACE_ICONS.get(s, '')} {s}",
                                       label_visibility="collapsed")
-        goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=f"ii_per_{item['item_id']}")
+        goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=_k(f"ii_per_{item['item_id']}", perishable))
         change = {}
         if choice and choice != current:
             change["storage"] = choice
@@ -338,7 +345,7 @@ def _expiry(batch):
     label = f"⏳ exp {current:%b %d}" if current else "⏳ no expiry"
     with st.popover(label, key=f"ii_exppop_{batch['batch_id']}"):
         st.caption("This purchase only")
-        day = st.date_input("Expiry date", value=current, key=f"ii_exp_{batch['batch_id']}",
+        day = st.date_input("Expiry date", value=current, key=_k(f"ii_exp_{batch['batch_id']}", current),
                             format="MM/DD/YYYY", label_visibility="collapsed")
         if day and day != current and st.button("Save", key=f"ii_exps_{batch['batch_id']}", type="primary"):
             events.apply([{"type": "expiry", "batch": batch, "expiry_date": day.isoformat()}],
@@ -359,14 +366,14 @@ def _pack(product, item):
     with st.popover(label, key=f"ii_packpop_{pid}"):
         item_unit = item.get("unit") or unit
         new_unit = st.selectbox("Measured in", UNITS, index=UNITS.index(unit) if unit in UNITS else 0,
-                                key=f"ii_unit_{pid}", help=f"How {item.get('name', 'this item')} is measured, for every purchase")
+                                key=_k(f"ii_unit_{pid}", unit), help=f"How {item.get('name', 'this item')} is measured, for every purchase")
         if new_unit != unit:
             moved = records.convert(known, unit, new_unit)
             st.caption(f"{item.get('name', 'This item')} will be measured in **{new_unit}** from now on. "
                        + ("Amounts are converted." if moved is not None or not known else
                           "Purchases are recounted as packs × the size below."))
             known = moved
-        size, count = pack_input(known, old_count, new_unit, key=f"ii_pack_{pid}_{new_unit}")
+        size, count = pack_input(known, old_count, new_unit, key=_k(f"ii_pack_{pid}_{new_unit}", known, old_count))
         changed_unit = new_unit != item_unit or new_unit != unit
         if size and (changed_unit or abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \
                 and st.button("Save pack size", key=f"ii_packs_{pid}", type="primary"):
@@ -549,7 +556,7 @@ def _edit_names(product):
     """✏️ beside the name: fix the product name or brand (the only place they're shown and edited)."""
     pid = product["product_id"]
     # Keys carry the saved values, so the boxes always start from what's saved now (e.g. after a redo search).
-    tag = f"{pid}_{abs(hash((product['name'], product.get('brand', ''))))}"
+    tag = _k(pid, product["name"], product.get("brand", ""))
     with st.popover("", icon=":material/edit:", key=f"ii_namepop_{pid}", help="Fix name or brand"):
         name = st.text_input("Product name", value=product["name"], key=f"ii_name_{tag}")
         brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{tag}")

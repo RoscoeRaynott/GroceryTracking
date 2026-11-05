@@ -721,10 +721,15 @@ def apply_pack_size(product_id, pack_units, unit, fix_batches=True, count=None, 
         return []
     mine = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
     resize = _to_resize(mine, pack_units, unit, recount)
-    sheets.update_rows("batches", "batch_id", {
-        b["batch_id"]: {"units": new, "unit": unit or b.get("unit"),
-                        **({} if _float(b.get("packs")) is not None else {"packs": 1})}
-        for b, new in resize})
+    changes = {b["batch_id"]: {"units": new, "unit": unit or b.get("unit"),
+                               **({} if _float(b.get("packs")) is not None else {"packs": 1})}
+               for b, new in resize}
+    for b in mine:  # amounts that stay as they are still get their pack count (12 each of a 12-pack = 1 pack)
+        units = _float(b.get("units"))
+        if b["batch_id"] not in changes and _float(b.get("packs")) is None and units and pack_units \
+                and (b.get("unit") or unit) == unit:
+            changes[b["batch_id"]] = {"packs": round(units / pack_units, 6)}
+    sheets.update_rows("batches", "batch_id", changes)
     return resize
 
 
