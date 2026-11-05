@@ -247,6 +247,8 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
     if barcode:
         info["barcode"] = barcode
     count, each = _num(result.get("pack_count")), _num(result.get("each_in_unit"))
+    if unit == "each" and count and not each:
+        each = 1.0  # counted in "each": a 2-pack is 2 each, whatever size each one is
     pack = _num(result.get("pack_in_unit")) or (count * each if count and each else None)
     info["pack_units"] = pack if pack and pack > 0 else None
     info["pack_count"] = count if count and count >= 1 else None
