@@ -139,7 +139,10 @@ def _fill(p):
             if not code:
                 st.warning("No barcode found in that photo. Try again closer.")
         if code:
-            _lookup(pid, lambda: productinfo.off_by_barcode(code), barcode=code)
+            _lookup(pid, lambda: productinfo.by_barcode(
+                sheets.get_settings()["model_lookup"], code,
+                st.session_state.get(f"ni_q_{pid}") or records.product_search_text(p),
+                records.item_unit(p["item_id"])), barcode=code)
     with tab_web:
         query = st.text_area("Search for", value=records.product_search_text(p), key=f"ni_q_{pid}",
                              help="Everything known about this product. Add or fix details to make the search exact.")
@@ -225,6 +228,8 @@ def _confirm(p, info):
     if info.get("pack_text"):
         size = f" = {info['pack_units']:g} {info['pack_unit']}" if info.get("pack_units") else ""
         st.markdown(f":blue-badge[pack: {info['pack_text']}{size}]")
+    if info.get("size_note"):
+        st.markdown(f":orange-badge[{info['size_note']}]")
     if info.get("url"):
         st.markdown(f"[Open the page it used]({info['url']})")
     _pack_field(p, info)

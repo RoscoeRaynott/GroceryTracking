@@ -194,13 +194,16 @@ def _add_barcode(review, code):
         card.update(barcode=code, receipt_text=f"barcode {code} · in your products")
     else:
         info = None
-        with st.spinner("Looking it up…"):
+        with st.spinner("Looking it up (searches Google if the free database doesn't know it)…"):
             try:
-                info = productinfo.off_by_barcode(code)
+                info = productinfo.by_barcode(sheets.get_settings()["model_lookup"], code)
+                # The item's unit isn't known yet, so a pack size from the web is set later in Needs info.
+                info.pop("pack_units", None)
             except Exception:
                 info = None
             if info:
-                line = " ".join(x for x in [info["brand"], info["name"], info.get("quantity")] if x)
+                size = info.get("quantity") or info.get("pack_text") or ""
+                line = " ".join(x for x in [info["brand"], info["name"], size] if x)
                 try:
                     result = receipts.interpret(sheets.get_settings()["model_receipts"], review["store"],
                                                 "barcode scan", [{"text": line, "kind": "item", "amount": None}],
@@ -210,7 +213,7 @@ def _add_barcode(review, code):
                     it = {"item": info["name"], "product": info["name"]}
                 card = _card_from_add(dict(it, product=info["name"], brand=info["brand"], price=None), {}, "")
                 card.update(info=info, packaged=True,
-                            receipt_text=f"barcode {code} · Open Food Facts: {info.get('quantity') or 'size unknown'}")
+                            receipt_text=f"barcode {code} · {info.get('source', '')}: {size or 'size unknown'}")
             else:
                 card = _blank_card("", None)
                 card.update(note="Not found online. Say or type what it is.", receipt_text=f"barcode {code}")

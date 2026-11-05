@@ -367,6 +367,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - Undoing an older change never brings back a batch that was deleted since.
   - **Recent changes (last 20) with Undo.** Undo marks events undone and restores the batch. The same list appears in Voice update.
 
+- **Finding imported products (decided):**
+  - **Barcode:** Open Food Facts first (free). If it doesn't have the barcode (it answers "404 not found"), the app **automatically searches Google for the barcode number**. The match still waits for Yes / Not this in Needs info; in Add purchase it fills the card.
+  - **Search text is short:** brand + product + real size, plus the store **only for big chains**: Costco, Sam's Club, Walmart, Target, Kroger, Safeway, Albertsons, Randalls, H-E-B, Whole Foods, Trader Joe's, Aldi, Sprouts, Central Market, Fiesta. Small local stores (e.g. Indian groceries), "1 each" counts and saying-it notes are left out.
+  - **Finding the product comes first; label info is a bonus.** A few short searches, anywhere (maker, Amazon, South Asian / East Asian grocery sites). If the brand makes only one version (one turmeric powder), that is the product, with any size difference shown as a badge. "Found, no label info" is a normal result.
 - **Look up all (built):** a button at the top of Needs info searches every product still missing size or label info, **up to 10 at once**, using each product's own search text (including edits).
   - A progress bar shows "7 of 12 searched · ✅ found · ⚠️ not found".
   - Results wait in each product's card (marked ✅, opened) for **Yes / Not this**, exactly like a single lookup. Nothing is saved automatically.

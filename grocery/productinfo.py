@@ -68,30 +68,39 @@ list and/or Nutrition Facts panel. Read exactly what is printed. Never guess val
 visible; use null for anything you cannot read. Return only JSON:
 {INFO_SHAPE}"""
 
-SEARCH_PROMPT = """Find the official ingredients list and Nutrition Facts for this exact US grocery
-product. Everything the user told us about it:
+SEARCH_PROMPT = """Identify this grocery product and, if published, read its ingredients and Nutrition Facts.
+What we know about it:
   {query}
-Step 1: find the exact product. Search Google with ALL of these details (store, pack size, cut,
-variety), not a generic search. Costco and Costco Business Center sell the same products, so check
-costco.com and costcobusinessdelivery.com; for other stores use their own site or the maker's page.
-The user's words may be informal or regional, so match on store, pack size and cut rather than exact
-wording (e.g. in South Asian usage "mutton" usually means goat meat).
-Step 2: read that product page (or the maker's page) for its ingredients list and Nutrition Facts.
-Raw single-ingredient meat, fish and produce often list none; that is fine, just leave them empty.
-Never fill in values from a different product.
+{barcode_rule}
+Goal 1, the one that matters most: FIND THE PRODUCT.
+- Use a few SHORT searches (brand + product, e.g. "Radhuni turmeric powder"), not one long search.
+- Search anywhere: the maker's own site, Amazon, Walmart, and South Asian / East Asian / international
+  grocery sites. Many imported products (Indian, Bangladeshi, Asian brands) are not sold by big US chains.
+- A store name is given only for big chains (Costco, Walmart…); then check that store's site
+  (costco.com and costcobusinessdelivery.com are the same products).
+- If the brand makes only one version of this product (one turmeric powder, one garam masala), that
+  IS the product, even if the size differs from what we know; report the size you found.
+- The user's words may be informal or regional (e.g. in South Asian usage "mutton" usually means goat).
+Goal 2, a bonus: its ingredients list and Nutrition Facts, from that product's page or the maker's page.
+Many spices, imported foods and raw meat/fish/produce publish none. That is fine: still report the
+product as found and leave the label info empty. Never fill in values from a different product.
 Return only JSON, no other text:
 {{
-  "product_found": true if you found this exact product,
+  "product_found": true if you identified the product (label info not required),
   "matched_name": the product's full name as listed, "matched_url": its product page URL,
   "image_url": the direct URL of the product's main photo if you saw one, else "",
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
-  "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "12 oz", "2 x 1 gal"), or "",
+  "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "200 g", "2 x 1 gal"), or "",
+  "size_note": if the size you found differs from what we know, say so briefly (e.g. "found 400 g; you had 200 g"), else "",
   "pack_in_unit": how many {unit} are in ONE pack as sold, ALWAYS converting to {unit} (12 oz = 0.75 lb;
                   "2 x 1 gal" = 2 gal; "6 x 16 fl oz" = 2839 ml; "32 fl oz" = 946 ml), or null only
                   if it truly can't be expressed in {unit},
   "reason": one sentence on what you found or why not,
   "info": {shape}
 }}"""
+
+BARCODE_RULE = """Its barcode (UPC/EAN) is {barcode}. Search for this number first: shopping sites often list
+imported products by barcode. Only report a product whose listing matches this barcode or clearly is it."""
 
 
 class NotFound(Exception):
@@ -121,7 +130,12 @@ def _get_json(url):
 
 
 def off_by_barcode(barcode):
-    data = _get_json(f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields={OFF_FIELDS}")
+    try:
+        data = _get_json(f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields={OFF_FIELDS}")
+    except urllib.error.HTTPError as ex:
+        if ex.code == 404:  # Open Food Facts answers 404 for barcodes it doesn't have
+            raise NotFound(barcode) from ex
+        raise
     product = data.get("product")
     if data.get("status") != 1 or not product or not product.get("product_name"):
         raise NotFound(barcode)
@@ -177,10 +191,20 @@ def _from_off(p, url):
 
 # ---------------------------------------------------------------- Gemini
 
-def web_lookup(model, query, unit="each"):
-    """query = everything known about the product (brand, name, size, store, what was said).
-    unit = the item's standard unit, so the pack size comes back in it."""
-    prompt = SEARCH_PROMPT.format(query=query, shape=INFO_SHAPE, unit=unit)
+def by_barcode(model, barcode, query="", unit="each"):
+    """Open Food Facts first (free); if it doesn't know the barcode, search Google for the number."""
+    try:
+        return off_by_barcode(barcode)
+    except NotFound:
+        return web_lookup(model, query, unit, barcode=barcode)
+
+
+def web_lookup(model, query, unit="each", barcode=""):
+    """query = short search text (brand, product, real size, big-chain store).
+    unit = the item's standard unit, so the pack size comes back in it.
+    barcode = digits to search for first (used when Open Food Facts doesn't know the barcode)."""
+    prompt = SEARCH_PROMPT.format(query=query or f"barcode {barcode}", shape=INFO_SHAPE, unit=unit,
+                                  barcode_rule=BARCODE_RULE.format(barcode=barcode) if barcode else "")
     result, sources = gemini.search_json("product_web_lookup", model, prompt)
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
@@ -191,6 +215,9 @@ def web_lookup(model, query, unit="each"):
     info["photo_url"] = page_image(info["url"]) or checked_image(result.get("image_url"))
     info["reason"] = result.get("reason", "")
     info["pack_text"] = result.get("pack_text") or ""
+    info["size_note"] = result.get("size_note") or ""
+    if barcode:
+        info["barcode"] = barcode
     pack = _num(result.get("pack_in_unit"))
     info["pack_units"] = pack if pack and pack > 0 else None
     info["pack_unit"] = unit
