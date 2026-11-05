@@ -11,7 +11,7 @@ import streamlit as st
 
 from grocery import events, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
-from grocery.schema import STORAGE, UNITS
+from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views import product_ui
 from grocery.views.amounts import amount_text, pack_input
 
@@ -90,8 +90,9 @@ def _panel(bid):
         if product:
             _pack(product, item)
     if product:
-        _ingredients(product, item)
-        _nutrition(product)
+        if item.get("kind", "Food") == "Food":  # only food has ingredients and Nutrition Facts to track
+            _ingredients(product, item)
+            _nutrition(product)
         _names(product)
     else:
         st.caption("Loose item: no package details to fill in.")
@@ -186,8 +187,19 @@ def _kept(item):
     current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
     perishable = item.get("perishable") == "yes"
     label = f"{PLACE_ICONS.get(current, '')} {current} · {'perishable' if perishable else 'keeps'}"
+    if item.get("kind") == "Household":
+        label = "🧴 · " + label
     with st.popover(label, key=f"ii_keptpop_{item['item_id']}"):
         st.caption("Every time you buy it")
+        kind = item.get("kind") if item.get("kind") in KINDS else "Food"
+        new_kind = st.segmented_control("Kind", KINDS, default=kind, key=f"ii_kind_{item['item_id']}",
+                                        format_func=lambda k: {"Food": "🍎 Food", "Household": "🧴 Household",
+                                                               "One-time": "📦 One-time"}.get(k, k),
+                                        help="Only food has ingredients and nutrition to fill in")
+        if new_kind and new_kind != kind:
+            records.set_item(item["item_id"], kind=new_kind, tracked="no" if new_kind == "One-time" else "yes")
+            st.toast(f"{item['name']}: {new_kind}")
+            _refresh()
         choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"ii_kept_{item['item_id']}",
                                       format_func=lambda s: f"{PLACE_ICONS.get(s, '')} {s}",
                                       label_visibility="collapsed")

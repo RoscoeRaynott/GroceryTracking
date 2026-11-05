@@ -445,12 +445,12 @@ def completeness(product, item, batch):
         checks.append(("expiry", bool(batch.get("expiry_date"))))
     if packaged:
         no_label = product.get("info_status") == "none"
-        checks += [
-            ("brand", bool(product.get("brand"))),
-            ("pack size", bool(_float(product.get("pack_size")))),
-            ("ingredients", bool(product.get("ingredients")) or no_label),
-            ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
-        ]
+        checks += [("brand", bool(product.get("brand"))), ("pack size", bool(_float(product.get("pack_size"))))]
+        if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
+            checks += [
+                ("ingredients", bool(product.get("ingredients")) or no_label),
+                ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
+            ]
     return checks
 
 
