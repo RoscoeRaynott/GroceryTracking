@@ -263,7 +263,8 @@ def info_gaps(product, item, batches):
     """What a packaged product still lacks: "size" (only ever counted in packs, size unknown) and/or
     "ingredients" (a food with no label info yet)."""
     gaps = []
-    if not product.get("pack_size") and batches and all(_waiting_for_pack_size(b) for b in batches):
+    if (not product.get("pack_size") and product.get("pack_varies") != "yes" and batches
+            and all(_waiting_for_pack_size(b) for b in batches)):
         gaps.append("size")
     if (item.get("kind") == "Food" and product.get("info_status") not in ("confirmed", "none")
             and not product.get("ingredients")):
@@ -444,6 +445,11 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
     return filled
 
 
+def set_pack_varies(product_id, varies):
+    """Sold by weight (salmon, a pack of chicken): no fixed pack size, each purchase records its own weight."""
+    sheets.update_rows("products", "product_id", {product_id: {"pack_varies": "yes" if varies else ""}})
+
+
 def set_bought(batch_id, units, packs=None):
     """Fix how much one purchase was: packs bought (with the product's pack size) or the amount itself."""
     change = {"units": round(units, 4)}
@@ -532,7 +538,8 @@ def completeness(product, item, batch):
         checks.append(("nutrition", bool(product.get("nutrients_json")) or product.get("nutrition_status") == "none"))
     if packaged:
         no_label = product.get("info_status") == "none"
-        checks += [("brand", bool(product.get("brand"))), ("pack size", bool(_float(product.get("pack_size"))))]
+        checks += [("brand", bool(product.get("brand"))),
+                   ("pack size", bool(_float(product.get("pack_size"))) or product.get("pack_varies") == "yes")]
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
                 ("ingredients", bool(product.get("ingredients")) or no_label),
