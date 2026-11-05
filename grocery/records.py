@@ -336,6 +336,7 @@ def save_product_match(product_id, info):
     sheets.update_rows("products", "product_id", {product_id: {
         "info_status": "none", "info_source": "Web search", "info_url": info.get("url", ""), "details": details,
         **({"photo_url": info["photo_url"]} if info.get("photo_url") else {}),
+        **({"barcode": info["barcode"]} if info.get("barcode") else {}),
     }})
 
 

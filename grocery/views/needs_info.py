@@ -32,29 +32,44 @@ def render():
         st.markdown(f":green-badge[✅ {found} found, check each below] "
                     + (f":orange-badge[⚠️ {missed} not found]" if missed else ""))
 
-    _look_up_all(products)
+    todo = [p for p in products if set(p["missing"]) & {"size", "ingredients"}
+            and not st.session_state.get(f"ni_found_{p['product_id']}")]
+    if len(todo) >= 2:
+        _look_up_all(todo)
+    pickable = {p["product_id"] for p in todo} if len(todo) >= 2 else set()
     for p in products:
         tags = " ".join(TAGS[m] for m in p["missing"])
         pid = p["product_id"]
         mark = "✅ " if st.session_state.get(f"ni_found_{pid}") else "⚠️ " if st.session_state.get(f"ni_miss_{pid}") else ""
-        with st.expander(f"{mark}{tags}  {p.get('emoji', '')} {p['name']}".strip(),
-                         expanded=bool(st.session_state.get(f"ni_found_{pid}"))):
-            _fill(p)
+        with st.container(horizontal=True, vertical_alignment="top", gap="small"):
+            if pid in pickable:
+                st.checkbox("Include in Look up all", key=f"ni_pick_{pid}", label_visibility="collapsed")
+            with st.expander(f"{mark}{tags}  {p.get('emoji', '')} {p['name']}".strip(),
+                             expanded=bool(st.session_state.get(f"ni_found_{pid}"))):
+                _fill(p)
 
 
 MAX_AT_ONCE = 10
 
 
-def _look_up_all(products):
-    """Look up every product still missing size or label info, up to 10 at a time, with a progress bar.
+def _look_up_all(todo):
+    """Look up the ticked products (all, unless you untick some), up to 10 at a time, with a progress bar.
     Results wait in each product's card for your Yes, exactly like a single lookup."""
-    todo = [p for p in products if set(p["missing"]) & {"size", "ingredients"}
-            and not st.session_state.get(f"ni_found_{p['product_id']}")]
-    if len(todo) < 2:
-        return
-    if not st.button(f"Look up all ({len(todo)})", icon=":material/travel_explore:", type="primary", width="stretch",
-                     help="Searches each product with its own search text, up to 10 at once. "
-                          "Nothing is saved until you tap Yes on each one."):
+    for p in todo:
+        st.session_state.setdefault(f"ni_pick_{p['product_id']}", True)
+    with st.container(horizontal=True):
+        if st.button("Tick all", key="ni_pick_all", type="tertiary", icon=":material/check_box:"):
+            for p in todo:
+                st.session_state[f"ni_pick_{p['product_id']}"] = True
+        if st.button("Untick all", key="ni_pick_none", type="tertiary", icon=":material/check_box_outline_blank:"):
+            for p in todo:
+                st.session_state[f"ni_pick_{p['product_id']}"] = False
+    total = len(todo)
+    todo = [p for p in todo if st.session_state.get(f"ni_pick_{p['product_id']}")]
+    label = f"Look up all ({len(todo)})" if len(todo) == total else f"Look up ticked ({len(todo)} of {total})"
+    if not st.button(label, icon=":material/travel_explore:", type="primary", width="stretch", disabled=not todo,
+                     help="Untick products whose names need fixing first. Searches each ticked product with its "
+                          "own search text, up to 10 at once. Nothing is saved until you tap Yes on each one."):
         return
     model = sheets.get_settings()["model_lookup"]
     jobs = {p["product_id"]: (st.session_state.get(f"ni_q_{p['product_id']}") or records.product_search_text(p),
@@ -107,42 +122,37 @@ def _fill(p):
         _lookup(pid, lambda: productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
                                                     records.item_unit(p["item_id"])))
 
-    tab_web, tab_label, tab_barcode = st.tabs(["Edit search", "Label photo", "Barcode"])
-    with tab_label:
-        st.caption("Photograph the ingredients list and Nutrition Facts panel (1–3 photos). This always wins.")
-        snapped = camera.photo(f"ni_labcam_{pid}", "Open camera to snap the label")
-        if snapped:
-            st.session_state.setdefault(f"ni_label_{pid}", []).append(snapped)
-        with st.expander("Or pick label photos from your gallery"):
-            photos.pick_photos(f"ni_label_{pid}", "Tap to add label photos", "Ingredients + Nutrition Facts")
-        queue = st.session_state.get(f"ni_label_{pid}", [])
-        if queue:
-            st.caption(f"{len(queue)} photo(s) ready")
-            if st.button("Read the label", key=f"ni_read_{pid}", type="primary"):
-                with st.spinner("Reading the label…"):
-                    try:
-                        info = productinfo.read_label(sheets.get_settings()["model_labels"],
-                                                      [ph["data"] for ph in queue[-3:]])
-                        if not p.get("photo_url"):
-                            info["photo_url"] = productinfo.thumbnail(queue[-3:][0]["data"])
-                        _found(pid, info)
-                    except GeminiError as ex:
-                        st.error(f"Couldn't read the label: {ex}")
-    with tab_barcode:
-        code = camera.barcodes(f"ni_bccam_{pid}", "Scan its barcode")
-        with st.expander("Or pick a barcode photo from your gallery"):
-            photos.pick_photos(f"ni_bc_{pid}", "Tap to add a barcode photo")
-        queue = st.session_state.get(f"ni_bc_{pid}", [])
-        if not code and queue and not queue[-1].get("done"):
-            queue[-1]["done"] = True
-            code = productinfo.read_barcode(queue[-1]["data"])
-            if not code:
-                st.warning("No barcode found in that photo. Try again closer.")
+    tab_web, tab_scan = st.tabs(["Edit search", "Scan it"])
+    with tab_scan:
+        st.caption("Scan the barcode to look it up, or tap the round button to photograph the ingredients "
+                   "and nutrition panel (1–3 photos, any language). The label always wins.")
+        got = camera.scan(f"ni_scan_{pid}")
+        code = None
+        if got and got[0] == "barcode":
+            code = got[1]
+        elif got:
+            st.session_state.setdefault(f"ni_label_{pid}", []).append(got[1])
+        with st.expander("Or pick photos from your gallery (barcode or label)"):
+            photos.pick_photos(f"ni_gal_{pid}", "Tap to add photos")
+        for ph in st.session_state.get(f"ni_gal_{pid}", []):
+            if not ph.get("done"):
+                ph["done"] = True
+                found_code = productinfo.read_barcode(ph["data"])
+                if found_code and not code:
+                    code = found_code
+                else:
+                    st.session_state.setdefault(f"ni_label_{pid}", []).append(ph)
         if code:
             _lookup(pid, lambda: productinfo.by_barcode(
                 sheets.get_settings()["model_lookup"], code,
                 st.session_state.get(f"ni_q_{pid}") or records.product_search_text(p),
                 records.item_unit(p["item_id"])), barcode=code)
+        label = _label_queue(pid)
+        if label:
+            if not p.get("photo_url"):
+                label["photo_url"] = productinfo.thumbnail(st.session_state[f"ni_label_{pid}"][-3:][0]["data"])
+            st.session_state.pop(f"ni_label_{pid}", None)
+            _found(pid, label)
     with tab_web:
         query = st.text_area("Search for", value=records.product_search_text(p), key=f"ni_q_{pid}",
                              help="Everything known about this product. Add or fix details to make the search exact.")
@@ -175,6 +185,43 @@ def _update_purchases(p):
         if st.button("They're right as they are", key=f"ni_keep_{pid}", type="tertiary"):
             records.keep_amounts(pid)
             st.rerun()
+
+
+def _label_queue(pid, key_suffix=""):
+    """Snapped label photos waiting to be read; returns the label info once "Read the label" is tapped."""
+    queue = st.session_state.get(f"ni_label_{pid}", [])
+    if not queue:
+        return None
+    with st.container(horizontal=True, vertical_alignment="center"):
+        for ph in queue[-3:]:
+            st.image(ph["data"], width=56)
+        st.markdown(f":blue-badge[{len(queue[-3:])} label photo{'s' if len(queue[-3:]) != 1 else ''}]")
+        if st.button("Clear", key=f"ni_clear_{pid}{key_suffix}", type="tertiary"):
+            st.session_state.pop(f"ni_label_{pid}", None)
+            st.rerun()
+    if st.button("Read the label", key=f"ni_read_{pid}{key_suffix}", type="primary", icon=":material/document_scanner:"):
+        with st.spinner("Reading the label…"):
+            try:
+                return productinfo.read_label(sheets.get_settings()["model_labels"], [ph["data"] for ph in queue[-3:]])
+            except GeminiError as ex:
+                st.error(f"Couldn't read the label: {ex}")
+    return None
+
+
+def _label_from_pack(p, info):
+    """On a web or barcode match: photograph the pack's label to add the ingredients and nutrition."""
+    pid = p["product_id"]
+    with st.expander("📸 Have the pack? Photograph its label", expanded=bool(info.get("no_label_info"))):
+        st.caption("Ingredients and nutrition panel, 1–3 photos, any language. The label wins over the web.")
+        snapped = camera.photo(f"ni_labcam_{pid}", "Open camera to snap the label")
+        if snapped:
+            st.session_state.setdefault(f"ni_label_{pid}", []).append(snapped)
+        with st.expander("Or pick label photos from your gallery"):
+            photos.pick_photos(f"ni_label_{pid}", "Tap to add label photos")
+        label = _label_queue(pid, "_m")
+        if label:
+            st.session_state.pop(f"ni_label_{pid}", None)
+            _found(pid, productinfo.with_label(info, label), info.get("barcode", ""))
 
 
 def _lookup(pid, fetch, barcode=""):
@@ -218,7 +265,7 @@ def _pack_field(p, info):
 
 def _confirm(p, info):
     pid = p["product_id"]
-    sure = info["source"] == "Label photo"
+    sure = "label photo" in info["source"].lower()
     st.markdown(f"**{'Read from your label' if sure else 'Possible match, is this right?'}**")
     if info.get("photo_url"):
         st.image(info["photo_url"], width=120)
@@ -233,6 +280,8 @@ def _confirm(p, info):
     if info.get("url"):
         st.markdown(f"[Open the page it used]({info['url']})")
     _pack_field(p, info)
+    if "label photo" not in info["source"].lower():
+        _label_from_pack(p, info)
     if info.get("no_label_info"):
         st.info("Found the product, but its page lists no ingredients or Nutrition Facts "
                 "(common for raw meat, fish and produce).")
