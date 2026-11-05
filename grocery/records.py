@@ -303,16 +303,30 @@ def purchase_history(limit=60):
     return out
 
 
+# Big chains whose own sites list what they sell; small local stores add nothing to a search.
+BIG_CHAINS = ["Costco", "Sam's Club", "Walmart", "Target", "Kroger", "Safeway", "Albertsons", "Randalls", "H-E-B",
+              "Whole Foods", "Trader Joe's", "Aldi", "Sprouts", "Central Market", "Fiesta"]
+
+
+def big_chain(store):
+    s = norm(store).replace("'", "").replace("-", "")
+    return next((c for c in BIG_CHAINS if norm(c).replace("'", "").replace("-", "") in s), None)
+
+
 def product_search_text(p):
-    """Everything known about a product, for an exact web search."""
+    """Short search text: brand + product + real size, plus the store only if it's a big chain."""
+    name = p["name"].strip()
+    parts = [] if norm(p.get("brand")) and norm(p.get("brand")) in norm(name) else [p.get("brand", "")]
+    parts.append(name)
+    size = _float(p.get("pack_size"))
+    if size and p.get("pack_unit") not in ("", "each") and not re.search(r"\d", name):
+        parts.append(f"{size:g} {p['pack_unit']}")
     latest = max((b for b in live_batches() if b.get("product_id") == p["product_id"]),
                  key=lambda b: b.get("purchased_on", ""), default={})
-    parts = [p.get("brand", ""), p["name"]]
-    if latest:
-        parts.append(f"{latest.get('units', '')} {latest.get('unit', '')} pack bought at {latest.get('store', '')}")
-    if p.get("details"):
-        parts.append(f"({p['details']})")
-    return " ".join(x for x in parts if x and x.strip())
+    chain = big_chain(latest.get("store"))
+    if chain and norm(chain) not in norm(name):
+        parts.append(chain)
+    return " ".join(x.strip() for x in parts if x and x.strip())
 
 
 def save_product_match(product_id, info):
