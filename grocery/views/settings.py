@@ -2,7 +2,7 @@ import streamlit as st
 
 from grocery import gemini, sheets
 from grocery.schema import DEFAULT_SETTINGS, TABS
-from grocery.views.common import back_home
+from grocery.views.common import back_home, go
 
 MODEL_TASKS = {
     "model_receipts": "Reading receipts",
@@ -25,6 +25,8 @@ def render():
     back_home()
     st.title("Settings")
     st.caption("Changes save to your Google Sheet as soon as you make them.")
+    if st.button("🧪 Lookup lab", key="to_lab", type="tertiary", help="Try the three kinds of product search on one product"):
+        go("lab")
 
     _, err = _sheet_status()
     models = _gemini_status()
