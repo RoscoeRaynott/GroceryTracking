@@ -443,6 +443,69 @@ def set_bought(batch_id, units, packs=None):
     sheets.update_rows("batches", "batch_id", {batch_id: change})
 
 
+def save_typical(product_id, item_name, match, grams=None, portion=""):
+    """Typical nutrition from USDA (per 100 g) for food without a label. A label's own nutrition always wins:
+    this never replaces nutrition read from a label or a product page."""
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
+    if product.get("nutrients_json") and not str(product.get("info_source", "")).startswith("USDA"):
+        return False
+    info = productinfo._from_ai({"name": match["name"], "serving_size": "100 g", "nutrients": match["nutrients"]},
+                                f"USDA typical: {match['name']}", "", [])
+    cols = productinfo.product_columns(info)
+    change = {"nutrients_json": cols["nutrients_json"], "serving_size": "100 g", "info_source": info["source"],
+              "info_url": f"https://fdc.nal.usda.gov/food-details/{match['fdc_id']}/nutrients"}
+    if grams:
+        change["piece_grams"] = grams
+        change["details"] = "; ".join(x for x in [product.get("details", ""), f"1 piece ≈ {grams:g} g ({portion})"] if x)
+    if not product.get("ingredients"):
+        change.update(ingredients=item_name, info_status="confirmed")
+    sheets.update_rows("products", "product_id", {product_id: change})
+    return True
+
+
+def fill_typical(purchase_id):
+    """After saving a purchase: loose food (fruit, vegetables, raw meat, fish) gets USDA typical nutrition,
+    a few at a time. Quietly skips anything it can't match; the item panel can always fix the match."""
+    from grocery import usda
+    if not usda.api_key():
+        return 0
+    item_rows = {i["item_id"]: i for i in items()}
+    prods = {p["product_id"]: p for p in sheets.read_tab("products")}
+    todo = {}
+    for b in sheets.read_tab("batches"):
+        p, item = prods.get(b.get("product_id")), item_rows.get(b.get("item_id"), {})
+        if (b.get("purchase_id") == purchase_id and p and p.get("packaged") == "no" and item.get("kind") == "Food"
+                and not p.get("nutrients_json")):
+            todo[p["product_id"]] = (item["name"], item.get("unit") == "each")
+
+    def one(pid, name, by_piece):
+        found = usda.matches(name, limit=1)
+        if not found:
+            return False
+        grams, portion = usda.piece_grams(found[0]["fdc_id"]) if by_piece else (None, "")
+        return save_typical(pid, name, found[0], grams, portion)
+
+    from concurrent.futures import ThreadPoolExecutor
+    try:
+        from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+        ctx = get_script_run_ctx()
+        start = (lambda: add_script_run_ctx(ctx=ctx)) if ctx else None
+    except ImportError:
+        start = None
+    done = 0
+    with ThreadPoolExecutor(max_workers=4, initializer=start) as pool:
+        for ok in pool.map(lambda kv: _quietly(one, kv[0], *kv[1]), todo.items()):
+            done += bool(ok)
+    return done
+
+
+def _quietly(fn, *args):
+    try:
+        return fn(*args)
+    except Exception:
+        return False
+
+
 def mark_no_nutrition(product_id):
     """You checked: no nutrition label worth tracking (e.g. a spice). Counts as done."""
     sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": "none"}})
@@ -456,6 +519,8 @@ def completeness(product, item, batch):
     checks = [("photo", bool(photo)), ("kept in", bool(item.get("storage")))]
     if item.get("perishable") == "yes":
         checks.append(("expiry", bool(batch.get("expiry_date"))))
+    if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition
+        checks.append(("nutrition", bool(product.get("nutrients_json")) or product.get("nutrition_status") == "none"))
     if packaged:
         no_label = product.get("info_status") == "none"
         checks += [("brand", bool(product.get("brand"))), ("pack size", bool(_float(product.get("pack_size"))))]

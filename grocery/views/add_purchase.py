@@ -741,10 +741,14 @@ def _save(state):
         readings.append((task, *state["interpretation"]))
     with st.spinner("Saving to your Google Sheet…"):
         try:
-            _, count = records.save_purchase(payload, finished, state["draft_id"], readings)
+            purchase_id, count = records.save_purchase(payload, finished, state["draft_id"], readings)
         except Exception as ex:
             st.error(f"Saving failed: {ex}. Nothing was lost; try again.")
             return
+    with st.spinner("Adding typical nutrition for fruit, vegetables, meat and fish…"):
+        typical = records.fill_typical(purchase_id)
+    if typical:
+        st.toast(f"📚 Typical nutrition added for {typical} item{'s' if typical != 1 else ''}")
     state["stage"], state["saved_count"] = "saved", count
     st.rerun()
 
