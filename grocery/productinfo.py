@@ -415,3 +415,32 @@ def wiki_image(*titles):
             if src:
                 return src
     return ""
+
+
+# ---------------------------------------------------------------- lookup lab (trial searches, nothing saved)
+
+LAB_PROMPTS = {
+    "product": """Identify this grocery product. What we know: {query}
+{store_rule}Use a few short searches. Return only JSON:
+{{"product_found": true/false, "matched_name": full name as listed, "matched_brand": brand or "",
+  "matched_url": product page URL, "image_url": direct URL of its main photo or "",
+  "pack_text": pack size as listed or "", "pack_count": how many units in one pack (2-pack = 2),
+  "each_in_unit": {unit} in one of those units, or null, "reason": one sentence}}""",
+    "nutrition": """Find the Nutrition Facts for this grocery product. What we know: {query}
+{store_rule}Use a few short searches. Report only numbers, never copy text. Return only JSON:
+{{"found": true/false, "serving_size": short, e.g. "3/4 cup (170g)", "servings_per_pack": number or null,
+  "nutrients": {{nutrient: {{"amount": number, "dv": number or null}}}} using only these keys and units, per serving:
+  {nutrients}, "reason": one sentence}}""",
+    "ingredients": """Find the ingredients list for this grocery product. What we know: {query}
+{store_rule}Use a few short searches. Return only JSON:
+{{"found": true/false, "ingredients": the ingredients as one comma-separated list, or "",
+  "reason": one sentence}}""",
+}
+
+
+def lab_lookup(model, part, query, unit="each", store=""):
+    """One focused trial search: part = "product" | "nutrition" | "ingredients". Returns (reply, sources)."""
+    store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
+                  else GENERAL_RULE)
+    prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST)
+    return gemini.search_json(f"lab_{part}", model, prompt)
