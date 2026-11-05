@@ -6,7 +6,8 @@
   <!-- In-app camera.
        mode "barcode": live scanning; each barcode found is sent at once (beep + vibrate), then it keeps scanning.
                        Uses Chrome's built-in BarcodeDetector (Android), else the bundled ZXing library.
-       mode "photo":   a big shutter button; each photo is sent as a JPEG (long edge 3072 px). -->
+       mode "photo":   a big shutter button; each photo is sent as a JPEG (long edge 3072 px).
+       mode "both":    live barcode scanning AND the shutter (scan a pack's barcode, then snap its label). -->
   <script src="./zxing.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0;
@@ -80,7 +81,7 @@
     async function start() {
       try {
         // Photos are portrait (receipts are tall and narrow); barcode scanning stays landscape.
-        const photo = mode === "photo";
+        const photo = mode === "photo" || mode === "both";
         stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
           facingMode: { ideal: "environment" }, width: { ideal: photo ? 2160 : 1920 },
           height: { ideal: photo ? 3840 : 1080 }, aspectRatio: { ideal: photo ? 9 / 16 : 16 / 9 } } });
@@ -89,7 +90,7 @@
         $("bar").style.display = "flex";
         return;
       }
-      document.body.classList.toggle("photo", mode === "photo");
+      document.body.classList.toggle("photo", mode !== "barcode");
       video.srcObject = stream;
       await video.play();
       running = true;
@@ -101,8 +102,9 @@
         $("shutter").style.display = "block";
         say("Tap the button for each photo");
       } else {
-        $("shutter").style.display = "none";
-        say("Point at a barcode");
+        $("frame").style.display = "block";
+        $("shutter").style.display = mode === "both" ? "block" : "none";
+        say(mode === "both" ? "Point at the barcode, or tap the button to photograph the label" : "Point at a barcode");
         if ("BarcodeDetector" in window) {
           try { detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] }); } catch (e) { detector = null; }
         }
@@ -131,7 +133,7 @@
     }
 
     async function scanLoop() {
-      if (!running || mode !== "barcode") return;
+      if (!running || mode === "photo") return;
       if (Date.now() >= pausedUntil && video.readyState >= 2) {
         const code = await detect();
         if (code && !(code === lastCode && Date.now() < pausedUntil + 2500)) {

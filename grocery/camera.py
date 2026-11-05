@@ -34,3 +34,18 @@ def _new(value, key):
         return None
     st.session_state[f"{key}_last"] = value.get("id")
     return value
+
+
+def scan(key, label="Scan barcode or label"):
+    """Live barcode scanning plus a shutter. Returns ("barcode", digits), ("photo", {"name", "data"}), or None."""
+    value = _new(_camera(mode="both", label=label, key=key), key)
+    if not value:
+        return None
+    if value.get("kind") == "barcode":
+        code = str(value.get("code", "")).strip()
+        return ("barcode", code) if code.isdigit() else None
+    try:
+        data = base64.b64decode(str(value.get("data", "")).split(",", 1)[-1])
+    except ValueError:
+        return None
+    return ("photo", {"name": f"camera-{value['id']}.jpg", "data": data}) if data else None

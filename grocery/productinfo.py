@@ -65,7 +65,11 @@ INFO_SHAPE = f"""{{
 
 LABEL_PROMPT = f"""These photos show the packaging of ONE food or drink product: front, ingredients
 list and/or Nutrition Facts panel. Read exactly what is printed. Never guess values that are not
-visible; use null for anything you cannot read. Return only JSON:
+visible; use null for anything you cannot read.
+The label may be in any language (Bengali, Hindi, Arabic, Chinese…): read it and write everything in English.
+If the nutrition table gives values per 100 g (or 100 ml) instead of per serving, set "serving_size" to
+"100 g" (or "100 ml") and give the amounts per 100 g. Give "dv" only where a % daily value is printed,
+else null. Return only JSON:
 {INFO_SHAPE}"""
 
 SEARCH_PROMPT = """Identify this grocery product and, if published, read its ingredients and Nutrition Facts.
@@ -227,6 +231,17 @@ def web_lookup(model, query, unit="each", barcode=""):
 def read_label(model, jpegs):
     result = gemini.generate_json("label_read", model, LABEL_PROMPT, [(j, "image/jpeg") for j in jpegs])
     return _from_ai(result, "Label photo", "", [])
+
+
+def with_label(found, label):
+    """A web/barcode match plus what the label photo says: the label wins for ingredients and nutrition."""
+    out = dict(found)
+    for key in ("serving_size", "servings_per_pack", "ingredients", "nutrients", "abv"):
+        if label.get(key):
+            out[key] = label[key]
+    out["source"] = f"{found.get('source') or 'Web search'} + label photo"
+    out["no_label_info"] = not (out.get("ingredients") or out.get("nutrients"))
+    return out
 
 
 def _from_ai(r, source, url, sources):

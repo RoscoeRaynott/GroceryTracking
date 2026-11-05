@@ -375,6 +375,15 @@ _Status: gathering requirements. No code until the plan is approved._
   - A progress bar shows "7 of 12 searched · ✅ found · ⚠️ not found".
   - Results wait in each product's card (marked ✅, opened) for **Yes / Not this**, exactly like a single lookup. Nothing is saved automatically.
   - Not-found products are marked ⚠️ and can be retried.
+- **Scan it: one camera for barcode + label (built):** in Needs info, "Barcode" and "Label photo" are merged into one **Scan it** tab (tabs: Edit search → Scan it).
+  - The camera scans barcodes live and has a shutter. A barcode is looked up right away (free database → Google). Shutter photos (1–3) → **Read the label**.
+  - Gallery photos work too: one with a barcode is looked up; others are treated as label photos.
+  - **Every web or barcode match has "📸 Have the pack? Photograph its label"**, open by default when no label info was found. The label is merged in ("Web search + label photo") and wins for ingredients and nutrition; the name, photo, link and barcode stay.
+  - **Labels in any language** are read and written in English.
+  - **Per-100 g labels:** amounts are saved as printed (serving "100 g"). **%DV is calculated from US FDA daily values** wherever the label doesn't print it.
+  - **Insights → Products:** "Add label photo" on any product without ingredients or nutrition (e.g. matched online earlier).
+  - Auto-snapping while rotating the pack: **skipped for now** (tap to snap).
+- **Look up all: tick boxes (built).** Every product it would search has a tick box (all ticked by default), plus Tick all / Untick all. The button reads "Look up ticked (17 of 19)" when some are unticked.
 - **Merge duplicate products (built):** "Same as a product I have" on every product in Insights → Products, and in Needs info.
   - Pick the right product, see a preview (purchases that move, details and nicknames it brings), then tap Merge.
   - The kept product keeps its own details. Empty ones (photo, info, pack size, barcode…) are filled from the duplicate, and nicknames are combined.
