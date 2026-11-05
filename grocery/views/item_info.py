@@ -97,7 +97,8 @@ def _panel(bid):
     # Kept in · expires · pack: one compact row; tap a chip to change it
     with st.container(horizontal=True, gap="small"):
         _kept(item)
-        _expiry(batch)
+        if item.get("perishable") == "yes":  # only things that go bad need an expiry date (same rule as the bar)
+            _expiry(batch)
         _bought(batch, product)
         if product:
             _pack(product, item)
