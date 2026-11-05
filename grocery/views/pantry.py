@@ -25,8 +25,7 @@ def render():
 
     records.fill_missing_item_pictures()
     products = {p["product_id"]: p for p in records.products()}
-    live = records.live_batches()
-    st.caption("Tap an item's name to see and fix everything about it.")
+    st.caption("Tap an item's name to see and fix everything about it. The bar shows how much is known about it.")
     for place, icon in PLACES:
         here = [r for r in rows if (r["item"].get("storage") or "Open air") == place]
         if not here:
@@ -35,21 +34,11 @@ def render():
         st.subheader(f"{place} · {len(here)}", anchor=False)
         for r in here:
             product = products.get(r["batch"].get("product_id"))
-            _row(r, product, _info_badge(product, r["item"], live))
+            _row(r, product, item_info.profile_bar(records.completeness(product, r["item"], r["batch"])))
     item_info.show_if_open()
 
 
-def _info_badge(product, item, live):
-    """✅ when a packaged product has its info, else what's missing; nothing for loose items."""
-    if not product or product.get("packaged") == "no":
-        return ""
-    gaps = records.info_gaps(product, item, [b for b in live if b.get("product_id") == product["product_id"]])
-    if not gaps:
-        return ":green-badge[✅ info]"
-    return " ".join({"size": ":orange-badge[📏 size?]", "ingredients": ":orange-badge[🧾 ingredients?]"}[g] for g in gaps)
-
-
-def _row(r, product=None, info_badge=""):
+def _row(r, product=None, profile=""):
     b, item = r["batch"], r["item"]
     bid = b["batch_id"]
     color = BADGE[r["level"]]
@@ -62,8 +51,8 @@ def _row(r, product=None, info_badge=""):
                 if st.button(f"**{b['item']}**", key=f"pi_{bid}", type="tertiary", icon=":material/info:",
                              help="See and fix everything about it"):
                     item_info.open_panel(bid)
-                st.markdown(f":{color}-badge[{r['days_open']}d{usual}]{note} {info_badge}  \n"
-                            f":gray[{amount_text(b.get('units'), b.get('unit'))} · {b.get('store', '')}]")
+                st.markdown(f":{color}-badge[{r['days_open']}d{usual}]{note}  \n"
+                            f":gray[{amount_text(b.get('units'), b.get('unit'))} · {b.get('store', '')}]  \n{profile}")
         with st.container(horizontal=True):
             if st.button("Finished", key=f"pf_{bid}", icon=":material/check:"):
                 events.apply([{"type": "finish", "batch": b}], said="Pantry: Finished", source="pantry")

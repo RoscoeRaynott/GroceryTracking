@@ -390,9 +390,35 @@ def rename_product(product_id, name, brand):
                                                if b.get("product_id") == product_id})
 
 
-def save_ingredients(product_id, ingredients):
+def save_ingredients(product_id, ingredients, source="Said by you"):
     sheets.update_rows("products", "product_id", {product_id: {
-        "ingredients": ingredients, "info_status": "confirmed", "info_source": "Said by you"}})
+        "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
+
+
+def mark_no_nutrition(product_id):
+    """You checked: no nutrition label worth tracking (e.g. a spice). Counts as done."""
+    sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": "none"}})
+
+
+def completeness(product, item, batch):
+    """[(what, filled?)] for the profile bar: what's known about this purchase's product and item."""
+    item, batch = item or {}, batch or {}
+    packaged = bool(product) and product.get("packaged") != "no"
+    photo = (product or {}).get("photo_url") if packaged else item.get("photo_url") not in ("", "none", None)
+    checks = [("photo", bool(photo)), ("kept in", bool(item.get("storage")))]
+    if item.get("perishable") == "yes":
+        checks.append(("expiry", bool(batch.get("expiry_date"))))
+    if packaged:
+        no_label = product.get("info_status") == "none"
+        checks += [
+            ("brand", bool(product.get("brand"))),
+            ("pack size", bool(_float(product.get("pack_size")))),
+            ("ingredients", bool(product.get("ingredients")) or no_label),
+            ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
+            ("barcode", bool(product.get("barcode"))),
+            ("nickname", bool(nicknames(product))),
+        ]
+    return checks
 
 
 MERGE_FILL = ("photo_url", "barcode", "brand", "serving_size", "servings_per_pack", "ingredients", "nutrients_json",

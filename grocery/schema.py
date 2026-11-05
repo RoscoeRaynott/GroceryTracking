@@ -15,6 +15,7 @@ TABS = {
         "serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv",
         "photo_url", "info_source", "info_url", "info_status", "source", "created_at", "details",
         "nicknames", "pack_size", "pack_unit",
+        "nutrition_status",  # "none" = you said it has no nutrition label worth tracking
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [

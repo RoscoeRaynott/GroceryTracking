@@ -8,7 +8,6 @@ import json
 import altair as alt
 import pandas as pd
 import streamlit as st
-from streamlit.errors import StreamlitInvalidLayoutContextError
 
 from grocery import events, recorder, records, voice
 from grocery.gemini import GeminiError
@@ -18,6 +17,16 @@ from grocery.views.amounts import amount_input, amount_text
 
 OPEN = "pantry_open"
 PLACE_ICONS = {"Freezer": "🧊", "Fridge": "❄️", "Open air": "🧺"}
+
+
+def profile_bar(checks):
+    """Like a website's profile completion: ▰▰▰▰▰▰▱▱▱▱ 60%, red under 40%, orange under 80%, else green."""
+    if not checks:
+        return ""
+    pct = round(100 * sum(1 for _, ok in checks if ok) / len(checks))
+    filled = round(pct / 10)
+    color = "red" if pct < 40 else "orange" if pct < 80 else "green"
+    return f":{color}[{'▰' * filled}{'▱' * (10 - filled)} **{pct}%**]"
 
 
 def open_panel(batch_id):
@@ -42,10 +51,7 @@ def _close():
 
 def _refresh():
     """Redraw just the panel; if this run wasn't a panel-only rerun, redraw the page (the panel reopens)."""
-    try:
-        st.rerun(scope="fragment")
-    except StreamlitInvalidLayoutContextError:
-        st.rerun()
+    product_ui.refresh()
 
 
 def _panel(bid):
@@ -54,15 +60,14 @@ def _panel(bid):
         return
     item = next((i for i in records.items() if i["item_id"] == batch.get("item_id")), {})
     product = next((p for p in records.products() if p["product_id"] == batch.get("product_id")), None)
-    mine = [b for b in records.live_batches() if product and b.get("product_id") == product["product_id"]]
-    gaps = records.info_gaps(product, item, mine) if product and product.get("packaged") != "no" else []
-
-    # Header: picture, names, how complete it is
+    # Header: picture, names, and how complete its profile is (green chips known, gray still missing)
     with st.container(horizontal=True, vertical_alignment="center"):
         product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
         brand = f"  \n:gray[{product.get('brand')}]" if product and product.get("brand") else ""
         st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}")
-    st.markdown(_completeness(product, gaps))
+    checks = records.completeness(product, item, batch)
+    st.markdown(profile_bar(checks) + "  \n" + " ".join(
+        f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
 
     # At a glance
     days = _days_open(batch)
@@ -79,20 +84,11 @@ def _panel(bid):
     _expiry(batch)
     if product:
         _pack(product, item)
-        _ingredients(product)
+        _ingredients(product, item)
         _nutrition(product)
         _names(product)
     else:
         st.caption("Loose item: no package details to fill in.")
-
-
-def _completeness(product, gaps):
-    if not product:
-        return ":gray-badge[loose item]"
-    if not gaps and (product.get("ingredients") or product.get("nutrients_json") or product.get("info_status") == "none"):
-        return ":green-badge[✅ info complete]"
-    badges = {"size": ":orange-badge[📏 pack size?]", "ingredients": ":orange-badge[🧾 ingredients?]"}
-    return " ".join(badges[g] for g in gaps) or ":green-badge[✅ info complete]"
 
 
 def _days_open(batch):
@@ -165,7 +161,7 @@ def _tools(pid, kind):
     return st.session_state.get(key)
 
 
-def _ingredients(product):
+def _ingredients(product, item):
     pid = product["product_id"]
     with st.container(border=True):
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -179,6 +175,12 @@ def _ingredients(product):
             st.caption("No label to read.")
         else:
             st.markdown(":orange-badge[missing] :gray[tap 🎤 to read it out, or 📸 to photograph it]")
+            single = (item.get("name") or product["name"]).strip()
+            if st.button(f"🌿 Single ingredient: {single}", key=f"ii_single_{pid}", type="tertiary",
+                         help="For rice, turmeric powder and the like: the ingredient is the product itself"):
+                records.save_ingredients(pid, single, source="Single ingredient")
+                st.toast(f"Ingredients: {single}")
+                _refresh()
         if mode == "mic":
             _say_ingredients(product)
         elif mode == "cam":
@@ -242,17 +244,23 @@ def _nutrition(product):
                 x="dv:Q", text=alt.Text("dv:Q", format=".0f"))
             st.altair_chart((bars + labels).properties(height=30 * len(rows)), width="stretch")
             st.caption("🟢 low (5% or less) · 🟠 medium · 🔴 high (20% or more)")
-        elif product.get("info_status") == "none":
-            st.caption("No nutrition label.")
+        elif product.get("info_status") == "none" or product.get("nutrition_status") == "none":
+            st.caption("No nutrition to track.")
         else:
             st.markdown(":orange-badge[missing] :gray[tap 📸 to photograph the nutrition panel]")
+            if st.button("🚫 No nutrition", key=f"ii_nonut_{pid}", type="tertiary",
+                         help="You've checked: there's no nutrition label worth tracking for this"):
+                records.mark_no_nutrition(pid)
+                st.toast("Marked: no nutrition")
+                _refresh()
         if mode == "cam":
             product_ui.label_photo(product, f"ii_labn_{pid}", inline=True)
 
 
 def _names(product):
     pid = product["product_id"]
-    with st.expander("✏️ Name, brand, nicknames"):
+    busy = st.session_state.get(f"ii_nick_{pid}_open") or st.session_state.get(f"ii_nick_{pid}_heard") is not None
+    with st.expander("✏️ Name, brand, nicknames", expanded=bool(busy)):
         name = st.text_input("Product name", value=product["name"], key=f"ii_name_{pid}")
         brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{pid}")
         if (name.strip() != product["name"] or brand.strip() != product.get("brand", "")) and name.strip() \

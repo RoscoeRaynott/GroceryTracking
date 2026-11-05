@@ -1,9 +1,19 @@
 """Small pieces shown wherever a product appears: its photo and its nicknames."""
 
 import streamlit as st
+from streamlit.errors import StreamlitInvalidLayoutContextError
 
 from grocery import camera, photos, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
+
+
+def refresh():
+    """Redraw only the panel or fragment this runs in (so an open item panel stays as it is);
+    on a normal page, redraw the page."""
+    try:
+        st.rerun(scope="fragment")
+    except StreamlitInvalidLayoutContextError:
+        st.rerun()
 
 
 def photo(product, emoji="", width=64, item=None):
@@ -28,12 +38,12 @@ def nicknames(product, key):
             for n in names:
                 if st.button(f"✕ {n}", key=f"{key}_rm_{n}", type="tertiary"):
                     records.remove_nickname(pid, n)
-                    st.rerun()
+                    refresh()
 
     if not st.session_state.get(f"{key}_open"):
         if st.button("Add a nickname", key=f"{key}_open_btn", icon=":material/mic:", type="tertiary"):
             st.session_state[f"{key}_open"] = True
-            st.rerun()
+            refresh()
         return
     nonce = st.session_state.setdefault(f"{key}_nn", 0)
     audio = recorder.record(f"{key}_mic_{nonce}", "Tap and say a nickname")
@@ -46,7 +56,7 @@ def nicknames(product, key):
             st.session_state[f"{key}_heard"] = voice.nicknames_from_audio(audio)
         except GeminiError as ex:
             st.error(f"Couldn't hear that: {ex}")
-        st.rerun()
+        refresh()
     new = []
     if heard is not None:
         # Show what was heard before saving, so a mishearing never sneaks in.
@@ -56,7 +66,7 @@ def nicknames(product, key):
                 new = heard
             if st.button("Try again", key=f"{key}_again"):
                 st.session_state.pop(f"{key}_heard", None)
-                st.rerun()
+                refresh()
     elif add:
         new = [t for t in typed.split(";")]
     if new:
@@ -65,7 +75,7 @@ def nicknames(product, key):
         st.session_state[f"{key}_nn"] = nonce + 1
         st.session_state[f"{key}_open"] = False
         st.toast("Nickname saved: " + ", ".join(n.strip() for n in new))
-        st.rerun()
+        refresh()
 
 
 LABELS = {"photo_url": "photo", "barcode": "barcode", "brand": "brand", "serving_size": "serving size",
@@ -105,7 +115,7 @@ def merge(product, key):
         if st.button("Merge", key=f"{key}_go", type="primary", icon=":material/merge:"):
             records.merge_products(product["product_id"], target["product_id"])
             st.toast(f"Merged into {target['name']}")
-            st.rerun()
+            refresh()
 
 
 def label_photo(product, key, inline=False, after_save=None):
@@ -132,10 +142,10 @@ def _label_photo_body(product, key, after_save):
                 st.toast(f"Label saved for {product['name']}")
                 if after_save:
                     after_save()
-                st.rerun()
+                refresh()
             if st.button("Discard", key=f"{key}_drop"):
                 st.session_state.pop(f"{key}_info", None)
-                st.rerun()
+                refresh()
         return
     st.caption("Ingredients and nutrition panel, 1–3 photos, any language.")
     snapped = camera.photo(f"{key}_cam", "Open camera to snap the label")
@@ -154,4 +164,4 @@ def _label_photo_body(product, key, after_save):
                     st.session_state.pop(f"{key}_q", None)
                 except Exception as ex:
                     st.error(f"Couldn't read the label: {ex}")
-            st.rerun()
+            refresh()
