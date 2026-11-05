@@ -123,7 +123,7 @@ def _tile_html(r):
     filled = round(pct / 20)
     return f"""<div style="display:flex;flex-direction:column;align-items:center;height:104px;justify-content:space-between">
 <div style="height:70px;display:flex;align-items:center;justify-content:center">{picture}</div>
-<div style="font-size:13px;font-weight:600;line-height:18px;padding-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px">{html.escape(b["item"])}</div>
+<div style="font-size:13px;font-weight:600;line-height:18px;padding-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px">{html.escape(records.short_name(product, item))}</div>
 <div style="font-size:12px;white-space:nowrap">{ready}<span style="background:{bg};color:{fg};border-radius:6px;padding:1px 6px">{warn}{r["days_open"]}d</span>
 <span style="color:{bar_color};letter-spacing:-1px">{"▰" * filled}{"▱" * (5 - filled)}</span></div></div>"""
 

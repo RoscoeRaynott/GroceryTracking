@@ -53,7 +53,9 @@ def show_if_open():
     if not batch or batch.get("status") != "open":
         st.session_state.pop(OPEN, None)
         return
-    st.dialog(batch["item"], width="medium", position="right", on_dismiss=_close)(_panel)(bid)
+    product = next((p for p in records.products() if p["product_id"] == batch.get("product_id")), None)
+    item = next((i for i in records.items() if i["item_id"] == batch.get("item_id")), {"name": batch["item"]})
+    st.dialog(records.short_name(product, item), width="medium", position="right", on_dismiss=_close)(_panel)(bid)
 
 
 def _close():
@@ -215,6 +217,13 @@ def _find_info(product, item):
             st.markdown(f"Brand: :red-badge[{product['brand']}] → :green-badge[{f_brand}]")
             if st.checkbox("Use the found brand", value=True, key=f"{key}_brand"):
                 new_brand = f_brand
+        new_item = None
+        exact = records.short_name({"name": f_name or product["name"], "brand": f_brand or product.get("brand", "")}, item)
+        if records.needs_own_item({"name": f_name or product["name"], "brand": f_brand or product.get("brand", "")}, item):
+            st.markdown(f"Item: :red-badge[{item.get('name', '')}] → :green-badge[{exact}] "
+                        ":gray[its own item, so its shelf life is learned on its own]")
+            if st.checkbox("Make it its own item", value=True, key=f"{key}_item"):
+                new_item = st.text_input("Item name", value=exact, key=f"{key}_item_name").strip() or None
         if found.get("pack_units") and not records._float(product.get("pack_size")):
             each = found["pack_units"] / (found.get("pack_count") or 1)
             new.append(f"pack size {found.get('pack_count') or 1:g} × {each:g} {found.get('pack_unit', '')}")
@@ -236,8 +245,8 @@ def _find_info(product, item):
                 use_pack = st.checkbox("Use the found pack", value=True, key=f"{key}_pack")
         with st.container(horizontal=True):
             if st.button("Yes, use it", key=f"{key}_yes", type="primary",
-                         disabled=not (new or use_photo or use_pack or new_name or new_brand or replace)):
-                filled = records.fill_from_lookup(pid, found, use_photo, use_pack, new_name, new_brand, replace)
+                         disabled=not (new or use_photo or use_pack or new_name or new_brand or replace or new_item)):
+                filled = records.fill_from_lookup(pid, found, use_photo, use_pack, new_name, new_brand, replace, new_item)
                 st.session_state.pop(key, None)
                 st.toast("Filled: " + ", ".join(FIELD_NAMES.get(f, f) for f in filled) if filled else "Nothing new")
                 _refresh()
@@ -684,6 +693,15 @@ def _edit_names(product):
                 and st.button("Save", key=f"ii_names_{pid}", type="primary"):
             records.rename_product(pid, name, brand)
             st.toast("Saved")
+            _refresh()
+        item_name = product.get("item", "")
+        new_item = st.text_input("Item (for shelf life)", value=item_name, key=_k(f"ii_itemname_{pid}", item_name),
+                                 help="Products with the same item share one 'how long it lasts'. Give a product its own "
+                                      "item when it lasts differently (a one-use masala vs a jar of garam masala).")
+        if new_item.strip() and records.norm(new_item) != records.norm(item_name) \
+                and st.button("Move to this item", key=f"ii_moveitem_{pid}", type="primary"):
+            records.move_to_item(pid, new_item)
+            st.toast(f"Now its own item: {new_item.strip()}")
             _refresh()
 
 
