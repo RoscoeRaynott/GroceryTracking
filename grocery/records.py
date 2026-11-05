@@ -532,13 +532,27 @@ def _to_resize(batches, pack_size, unit):
     return out
 
 
-def apply_pack_size(product_id, pack_units, unit, fix_batches=True):
+def lookup_store(product):
+    """The big chain whose own site should be searched first: from a store brand (Kirkland = Costco)
+    or where it was bought; "" for imported / local-store products."""
+    by_brand = store_from_brands([product.get("brand", ""), product.get("name", "")])
+    if by_brand:
+        return by_brand
+    latest = max((b for b in live_batches() if b.get("product_id") == product.get("product_id")),
+                 key=lambda b: b.get("purchased_on", ""), default={})
+    return big_chain(latest.get("store")) or ""
+
+
+def apply_pack_size(product_id, pack_units, unit, fix_batches=True, count=None):
     """Remember a product's pack size; purchases counted in packs become packs x pack size.
 
     Returns [(batch, new units)] for the purchases that changed. Pantry, Insights, lifespans and
     prices are all worked out from these rows, so they follow automatically.
     """
-    sheets.update_rows("products", "product_id", {product_id: {"pack_size": pack_units, "pack_unit": unit}})
+    change = {"pack_size": pack_units, "pack_unit": unit}
+    if count:
+        change["pack_count"] = count
+    sheets.update_rows("products", "product_id", {product_id: change})
     if not fix_batches:
         return []
     mine = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]

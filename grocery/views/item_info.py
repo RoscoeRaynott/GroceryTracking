@@ -13,7 +13,7 @@ from grocery import events, recorder, records, voice
 from grocery.gemini import GeminiError
 from grocery.schema import STORAGE
 from grocery.views import product_ui
-from grocery.views.amounts import amount_input, amount_text
+from grocery.views.amounts import amount_text, pack_input
 
 OPEN = "pantry_open"
 PLACE_ICONS = {"Freezer": "🧊", "Fridge": "❄️", "Open air": "🧺"}
@@ -143,9 +143,11 @@ def _pack(product, item):
     known = records._float(product.get("pack_size"))
     with st.container(border=True):
         _section("📦 One pack" + ("" if known else "  :orange-badge[size?]"))
-        size = amount_input("1 pack", known, unit, key=f"ii_pack_{pid}", placeholder=f"{unit} in one pack")
-        if size and size != known and st.button("Save pack size", key=f"ii_packs_{pid}", type="primary"):
-            changed = records.apply_pack_size(pid, size, unit)
+        old_count = records._float(product.get("pack_count"))
+        size, count = pack_input(known, old_count, unit, key=f"ii_pack_{pid}")
+        if size and (abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \
+                and st.button("Save pack size", key=f"ii_packs_{pid}", type="primary"):
+            changed = records.apply_pack_size(pid, size, unit, count=count)
             st.toast(f"Pack = {amount_text(size, unit)}" + (f" · {len(changed)} purchase(s) updated" if changed else ""))
             _refresh()
 

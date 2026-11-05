@@ -44,3 +44,16 @@ def amount_text(units, unit):
     if not whole:
         return f"{part:g} {name}"
     return f"{whole:,g} {unit} {part:g} {name}" if part else f"{whole:,g} {unit}"
+
+
+def pack_input(total, count, unit, key):
+    """One pack as sold = how many are in it × the size of each (2 tubs × 32 oz).
+    Returns (total in `unit` or None, count)."""
+    count = int(count) if count and float(count) >= 1 else 1
+    each = total / count if total else None
+    n = st.number_input("How many in the pack", value=count, min_value=1, step=1, key=f"{key}_n")
+    size = amount_input("Each", each, unit, key=f"{key}_each", placeholder=f"{unit} in each one")
+    if size is None:
+        return None, n
+    st.caption(f"1 pack = {n} × {amount_text(size, unit)} = **{amount_text(n * size, unit)}**")
+    return n * size, n
