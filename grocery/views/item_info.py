@@ -65,6 +65,8 @@ def _panel(bid):
         product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
         brand = f"  \n:gray[{product.get('brand')}]" if product and product.get("brand") else ""
         st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}")
+        if product:
+            _edit_names(product)
     checks = records.completeness(product, item, batch)
     st.markdown(profile_bar(checks) + "  \n" + " ".join(
         f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
@@ -331,17 +333,25 @@ def _nutrition(product):
             product_ui.label_photo(product, f"ii_labn_{pid}", inline=True)
 
 
-def _names(product):
+def _edit_names(product):
+    """✏️ beside the name: fix the product name or brand (the only place they're shown and edited)."""
     pid = product["product_id"]
-    busy = st.session_state.get(f"ii_nick_{pid}_open") or st.session_state.get(f"ii_nick_{pid}_heard") is not None
-    with st.expander("✏️ Name, brand, nicknames", expanded=bool(busy)):
-        name = st.text_input("Product name", value=product["name"], key=f"ii_name_{pid}")
-        brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{pid}")
+    # Keys carry the saved values, so the boxes always start from what's saved now (e.g. after a redo search).
+    tag = f"{pid}_{abs(hash((product['name'], product.get('brand', ''))))}"
+    with st.popover("", icon=":material/edit:", key=f"ii_namepop_{pid}", help="Fix name or brand"):
+        name = st.text_input("Product name", value=product["name"], key=f"ii_name_{tag}")
+        brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{tag}")
         if (name.strip() != product["name"] or brand.strip() != product.get("brand", "")) and name.strip() \
-                and st.button("Save names", key=f"ii_names_{pid}", type="primary"):
+                and st.button("Save", key=f"ii_names_{pid}", type="primary"):
             records.rename_product(pid, name, brand)
             st.toast("Saved")
             _refresh()
+
+
+def _names(product):
+    pid = product["product_id"]
+    busy = st.session_state.get(f"ii_nick_{pid}_open") or st.session_state.get(f"ii_nick_{pid}_heard") is not None
+    with st.expander("🏷 Nicknames", expanded=bool(busy)):
         product_ui.nicknames(product, f"ii_nick_{pid}")
         if product.get("barcode") or product.get("info_url"):
             link = f" · [page]({product['info_url']})" if product.get("info_url") else ""
