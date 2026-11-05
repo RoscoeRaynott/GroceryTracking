@@ -643,7 +643,7 @@ def _card(c, review, known, open_by_item, open_fields):
             c["item"] = st.text_input("Item", value=c["item"], key=f"it_{uid}_item")
             c["product"] = st.text_input("Product / brand", value=c["product"], key=f"it_{uid}_product")
             if c.get("packs") is not None:
-                packs = st.number_input("Packs", value=float(c["packs"]), min_value=0.0, step=1.0,
+                packs = st.number_input("Packs bought", value=float(c["packs"]), min_value=0.0, step=1.0,
                                         key=f"it_{uid}_packs")
                 if packs != c["packs"]:
                     c["packs"] = packs

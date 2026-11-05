@@ -27,11 +27,15 @@ def render():
                                 f":red-badge[{a['days_open']}d · {a['reason']}]")
                 if st.button(f"Check pantry ({len(alerts)})", icon=":material/kitchen:", type="tertiary"):
                     go("pantry")
-        missing = len(records.products_needing_info())
+        missing = sum(1 for r in analytics.pantry()
+                      if any(not ok for what, ok in records.completeness(
+                          next((p for p in records.products() if p["product_id"] == r["batch"].get("product_id")), None),
+                          r["item"], r["batch"]) if what != "expiry"))
         if missing:
-            label = f"{missing} product{'s' if missing != 1 else ''} need{'s' if missing == 1 else ''} info"
+            label = f"{missing} item{'s' if missing != 1 else ''} need{'s' if missing == 1 else ''} info"
             if st.button(label, icon=":material/info:", type="tertiary"):
-                go("needs_info")
+                st.session_state["pantry_view"] = "Needs info"
+                go("pantry")
 
     st.markdown(BIG_BUTTONS_CSS, unsafe_allow_html=True)
     with st.container(key="home_nav", gap="medium"):
