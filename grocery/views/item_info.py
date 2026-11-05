@@ -11,7 +11,7 @@ import streamlit as st
 
 from grocery import events, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
-from grocery.schema import STORAGE
+from grocery.schema import STORAGE, UNITS
 from grocery.views import product_ui
 from grocery.views.amounts import amount_text, pack_input
 
@@ -149,9 +149,19 @@ def _redo_search(product, item):
             new.append("barcode")
         st.markdown("Would fill: " + (" ".join(f":green-badge[+ {n}]" for n in new) or ":gray[nothing new]"))
         use_photo = st.checkbox("Use this photo", value=True, key=f"{key}_photo") if found.get("photo_url") else False
+        saved = records._float(product.get("pack_size"))
+        use_pack = False
+        if found.get("pack_units") and saved:
+            n_saved = int(records._float(product.get("pack_count")) or 1)
+            n_found = int(found.get("pack_count") or 1)
+            if abs(found["pack_units"] - saved) > 1e-6 or n_found != n_saved:
+                unit = found.get("pack_unit") or product.get("pack_unit", "")
+                st.markdown(f"Pack: saved :red-badge[{n_saved} × {amount_text(saved / n_saved, unit)}] → found "
+                            f":green-badge[{n_found} × {amount_text(found['pack_units'] / n_found, unit)}]")
+                use_pack = st.checkbox("Use the found pack", value=True, key=f"{key}_pack")
         with st.container(horizontal=True):
-            if st.button("Yes, fill it in", key=f"{key}_yes", type="primary", disabled=not (new or use_photo)):
-                filled = records.fill_from_lookup(pid, found, use_photo)
+            if st.button("Yes, fill it in", key=f"{key}_yes", type="primary", disabled=not (new or use_photo or use_pack)):
+                filled = records.fill_from_lookup(pid, found, use_photo, use_pack)
                 st.session_state.pop(key, None)
                 st.toast("Filled: " + ", ".join(FIELD_NAMES.get(f, f) for f in filled) if filled else "Nothing new")
                 _refresh()
@@ -218,11 +228,23 @@ def _pack(product, item):
     else:
         label = "📦 pack size?"
     with st.popover(label, key=f"ii_packpop_{pid}"):
-        size, count = pack_input(known, old_count, unit, key=f"ii_pack_{pid}")
-        if size and (abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \
+        item_unit = item.get("unit") or unit
+        new_unit = st.selectbox("Measured in", UNITS, index=UNITS.index(unit) if unit in UNITS else 0,
+                                key=f"ii_unit_{pid}", help=f"How {item.get('name', 'this item')} is measured, for every purchase")
+        if new_unit != unit:
+            moved = records.convert(known, unit, new_unit)
+            st.caption(f"{item.get('name', 'This item')} will be measured in **{new_unit}** from now on. "
+                       + ("Amounts are converted." if moved is not None or not known else
+                          "Purchases are recounted as packs × the size below."))
+            known = moved
+        size, count = pack_input(known, old_count, new_unit, key=f"ii_pack_{pid}_{new_unit}")
+        changed_unit = new_unit != item_unit or new_unit != unit
+        if size and (changed_unit or abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \
                 and st.button("Save pack size", key=f"ii_packs_{pid}", type="primary"):
-            changed = records.apply_pack_size(pid, size, unit, count=count)
-            st.toast(f"Pack = {amount_text(size, unit)}" + (f" · {len(changed)} purchase(s) updated" if changed else ""))
+            if changed_unit:
+                records.change_item_unit(item["item_id"], new_unit, pid)
+            changed = records.apply_pack_size(pid, size, new_unit, count=count, recount=True)
+            st.toast(f"Pack = {amount_text(size, new_unit)}" + (f" · {len(changed)} purchase(s) updated" if changed else ""))
             _refresh()
 
 

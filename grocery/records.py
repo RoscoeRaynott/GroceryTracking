@@ -404,7 +404,7 @@ def save_ingredients(product_id, ingredients, source="Said by you"):
         "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
 
 
-def fill_from_lookup(product_id, info, use_photo=True):
+def fill_from_lookup(product_id, info, use_photo=True, use_pack=False):
     """A redo search on the store's site: fill only what's still empty (and the photo, if you want it).
     Returns the names of the fields that were filled."""
     product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
@@ -423,8 +423,9 @@ def fill_from_lookup(product_id, info, use_photo=True):
         change["info_url"] = info["url"]
     sheets.update_rows("products", "product_id", {product_id: change})
     filled = [k for k in change if k not in ("info_status", "info_source")]
-    if info.get("pack_units") and not _float(product.get("pack_size")):
-        apply_pack_size(product_id, info["pack_units"], info.get("pack_unit") or "each", count=info.get("pack_count"))
+    if info.get("pack_units") and (use_pack or not _float(product.get("pack_size"))):
+        apply_pack_size(product_id, info["pack_units"], info.get("pack_unit") or "each", count=info.get("pack_count"),
+                        recount=use_pack)
         filled.append("pack size")
     return filled
 
@@ -552,13 +553,20 @@ def _waiting_for_pack_size(batch):
     return units == packs if packs is not None else units in (None, 1.0)
 
 
-def _to_resize(batches, pack_size, unit):
-    """[(batch, new units)] for purchases still waiting for this pack size, where it changes something."""
+def _whole_packs(batch):
+    """Bought as whole packs (1, 2, 5 crates…), as opposed to an amount said in units (stored as 0.5 of a pack)."""
+    packs = _float(batch.get("packs"))
+    return bool(packs) and packs >= 1 and abs(packs - round(packs)) < 1e-9
+
+
+def _to_resize(batches, pack_size, unit, recount=False):
+    """[(batch, new units)] for purchases still waiting for this pack size, where it changes something.
+    recount=True: also purchases bought as whole packs, because the pack size itself was corrected."""
     if not pack_size:
         return []
     out = []
     for b in batches:
-        if _waiting_for_pack_size(b):
+        if _waiting_for_pack_size(b) or (recount and _whole_packs(b)):
             new = (_float(b.get("packs")) or 1.0) * pack_size
             if new != _float(b.get("units")) or (unit and unit != b.get("unit")):
                 out.append((b, new))
@@ -576,7 +584,53 @@ def lookup_store(product):
     return big_chain(latest.get("store")) or ""
 
 
-def apply_pack_size(product_id, pack_units, unit, fix_batches=True, count=None):
+# How many of the base unit are in one of each unit: weights in oz, volumes in fl oz.
+_CONVERT = {"oz": ("weight", 1.0), "lb": ("weight", 16.0),
+            "fl oz": ("volume", 1.0), "qt": ("volume", 32.0), "gal": ("volume", 128.0), "ml": ("volume", 1 / 29.5735)}
+
+
+def convert(amount, from_unit, to_unit):
+    """Amount in from_unit expressed in to_unit, or None when they can't be converted (e.g. each -> fl oz)."""
+    a, b = _CONVERT.get(from_unit), _CONVERT.get(to_unit)
+    if from_unit == to_unit:
+        return amount
+    if not a or not b or a[0] != b[0] or amount is None:
+        return None
+    return amount * a[1] / b[1]
+
+
+def change_item_unit(item_id, new_unit, product_id):
+    """Measure an item in a new unit from now on. Amounts that can be converted (lb <-> oz, gal <-> fl oz <-> ml)
+    are converted. Otherwise (each -> fl oz) each purchase is kept as its number of packs, waiting for the
+    product's pack size: `product_id` gets it right away, other products show up in Needs info."""
+    item = next((i for i in items() if i["item_id"] == item_id), {})
+    old_unit = item.get("unit") or "each"
+    if new_unit == old_unit:
+        return
+    sheets.update_rows("items", "item_id", {item_id: {"unit": new_unit}})
+    prods = {p["product_id"]: p for p in products() if p.get("item_id") == item_id}
+    prod_changes, batch_changes = {}, {}
+    for p in prods.values():
+        size = _float(p.get("pack_size"))
+        new_size = convert(size, p.get("pack_unit") or old_unit, new_unit)
+        prod_changes[p["product_id"]] = {"pack_size": round(new_size, 4) if new_size else "", "pack_unit": new_unit if new_size else ""}
+    for b in sheets.read_tab("batches"):
+        if b.get("item_id") != item_id:
+            continue
+        units, packs = _float(b.get("units")), _float(b.get("packs"))
+        moved = convert(units, b.get("unit") or old_unit, new_unit)
+        if moved is not None and b.get("product_id") != product_id:
+            batch_changes[b["batch_id"]] = {"units": round(moved, 4), "unit": new_unit}
+            continue
+        # Not convertible (or the product being fixed now): keep the number of packs; units wait for the pack size.
+        size = _float(prods.get(b.get("product_id"), {}).get("pack_size"))
+        packs = packs or (units / size if units and size else 1.0)
+        batch_changes[b["batch_id"]] = {"packs": round(packs, 6), "units": round(packs, 6), "unit": new_unit}
+    sheets.update_rows("products", "product_id", prod_changes)
+    sheets.update_rows("batches", "batch_id", batch_changes)
+
+
+def apply_pack_size(product_id, pack_units, unit, fix_batches=True, count=None, recount=False):
     """Remember a product's pack size; purchases counted in packs become packs x pack size.
 
     Returns [(batch, new units)] for the purchases that changed. Pantry, Insights, lifespans and
@@ -589,7 +643,7 @@ def apply_pack_size(product_id, pack_units, unit, fix_batches=True, count=None):
     if not fix_batches:
         return []
     mine = [b for b in sheets.read_tab("batches") if b.get("product_id") == product_id]
-    resize = _to_resize(mine, pack_units, unit)
+    resize = _to_resize(mine, pack_units, unit, recount)
     sheets.update_rows("batches", "batch_id", {
         b["batch_id"]: {"units": new, "unit": unit or b.get("unit"),
                         **({} if _float(b.get("packs")) is not None else {"packs": 1})}
