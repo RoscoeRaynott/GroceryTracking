@@ -199,6 +199,12 @@ def _find_info(product, item):
         new = [FIELD_NAMES.get(k, k) + (" (from your photo)" if k in photo else "")
                for k in ("serving_size", "ingredients", "nutrients_json", "abv")
                if cols.get(k) and (not product.get(k) or k in photo)]
+        replace = []  # saved ingredients / nutrition the found page has different values for
+        for col, what in (("ingredients", "ingredients"), ("nutrients_json", "nutrition")):
+            if cols.get(col) and product.get(col) and col not in photo and _differs(col, cols[col], product[col]):
+                st.markdown(f"{what.capitalize()}: :red-badge[{_short(col, product[col])}] → :green-badge[{_short(col, cols[col])}]")
+                if st.checkbox(f"Use the found {what}", value=True, key=f"{key}_use_{col}"):
+                    replace.append(col)
         new_name = new_brand = None
         f_name, f_brand = str(found.get("name") or "").strip(), str(found.get("brand") or "").strip()
         if f_name and records.norm(f_name) != records.norm(product["name"]):
@@ -230,8 +236,8 @@ def _find_info(product, item):
                 use_pack = st.checkbox("Use the found pack", value=True, key=f"{key}_pack")
         with st.container(horizontal=True):
             if st.button("Yes, use it", key=f"{key}_yes", type="primary",
-                         disabled=not (new or use_photo or use_pack or new_name or new_brand)):
-                filled = records.fill_from_lookup(pid, found, use_photo, use_pack, new_name, new_brand)
+                         disabled=not (new or use_photo or use_pack or new_name or new_brand or replace)):
+                filled = records.fill_from_lookup(pid, found, use_photo, use_pack, new_name, new_brand, replace)
                 st.session_state.pop(key, None)
                 st.toast("Filled: " + ", ".join(FIELD_NAMES.get(f, f) for f in filled) if filled else "Nothing new")
                 _refresh()
@@ -253,6 +259,27 @@ def scan_lookup(product, item):
         or records.product_search_text(product),
         product.get("pack_unit") or item.get("unit") or "each", records.lookup_store(product),
         queued.get("barcode") or product.get("barcode", ""), queued.get("photos", ()))
+
+
+def _differs(col, a, b):
+    if col == "nutrients_json":
+        try:
+            return json.loads(a) != json.loads(b)
+        except ValueError:
+            return a != b
+    return records.norm(a) != records.norm(b)
+
+
+def _short(col, value):
+    """A one-glance summary for a saved → found line."""
+    if col == "nutrients_json":
+        try:
+            n = json.loads(value).get("per_serving", {})
+        except ValueError:
+            return "?"
+        return f"{len(n)} nutrients" + (f", {n['calories']['amount']:g} kcal" if "calories" in n else "")
+    text = str(value).replace("[", "(").replace("]", ")")
+    return text if len(text) <= 40 else text[:38] + "…"
 
 
 def _lookup(fetch):

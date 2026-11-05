@@ -415,7 +415,7 @@ def save_ingredients(product_id, ingredients, source="Said by you"):
 LABEL_COLS = ("serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv")
 
 
-def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=None, new_brand=None):
+def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=None, new_brand=None, replace=()):
     """Save a lookup / scan match: fill only what's still empty (and the photo, if you want it). What a photo of
     the label read replaces earlier label info, since the label always wins. new_name / new_brand: the exact
     name and brand it identified, when you chose to use them. Returns the names of the fields that changed."""
@@ -424,7 +424,10 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
     from_photo = info.get("from_photo") or (list(LABEL_COLS) if info.get("source") == "Label photo" else [])
     change = {k: v for k, v in cols.items()
               if k not in ("info_status", "info_source", "info_url", "photo_url", "pack_size", "pack_unit", "pack_count")
-              and v not in ("", None) and (not product.get(k) or k in from_photo)}
+              and v not in ("", None) and (not product.get(k) or k in from_photo or k in replace
+                                           or (k in ("serving_size", "servings_per_pack") and "nutrients_json" in replace))}
+    if "nutrients_json" in change:
+        change["nutrition_status"] = ""  # real values replace an earlier "no nutrition"
     if info.get("photo_url") and (use_photo or not product.get("photo_url")):
         change["photo_url"] = info["photo_url"]
     if info.get("barcode") and not product.get("barcode"):
