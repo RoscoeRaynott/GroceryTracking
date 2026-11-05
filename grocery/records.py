@@ -279,7 +279,12 @@ def _brand_if_missing(product_id, info):
 
 
 def save_product_info(product_id, info, barcode=""):
+    """Save what a lookup or label photo found. Only what it actually found is written: a photo of just the
+    nutrition panel never erases ingredients saved earlier, and the other way round."""
     changes = productinfo.product_columns(info)
+    for col in ("serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv"):
+        if changes.get(col) in ("", None):
+            changes.pop(col, None)
     changes.update(_brand_if_missing(product_id, info))
     if barcode:
         changes["barcode"] = barcode

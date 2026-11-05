@@ -93,6 +93,9 @@ def _panel(bid):
         if item.get("kind", "Food") == "Food":  # only food has ingredients and Nutrition Facts to track
             _ingredients(product, item)
             _nutrition(product)
+            if st.session_state.get(f"ii_cam_{product['product_id']}"):
+                st.markdown("**📸 Label photos** :gray[ingredients and/or nutrition panel; saving only adds what it read]")
+                product_ui.label_photo(product, f"ii_lab_{product['product_id']}", inline=True)
         _names(product)
     else:
         st.caption("Loose item: no package details to fill in.")
@@ -267,7 +270,8 @@ def _tools(pid, kind):
         if kind == "ing" and st.button("", key=f"{key}_mic", icon=":material/mic:", help="Say the ingredients"):
             st.session_state[key] = None if st.session_state.get(key) == "mic" else "mic"
         if st.button("", key=f"{key}_cam", icon=":material/photo_camera:", help="Photograph the label"):
-            st.session_state[key] = None if st.session_state.get(key) == "cam" else "cam"
+            cam = f"ii_cam_{pid}"  # one label camera for both sections, so photos and readings add up
+            st.session_state[cam] = not st.session_state.get(cam)
     return st.session_state.get(key)
 
 
@@ -293,8 +297,6 @@ def _ingredients(product, item):
                 _refresh()
         if mode == "mic":
             _say_ingredients(product)
-        elif mode == "cam":
-            product_ui.label_photo(product, f"ii_lab_{pid}", inline=True)
 
 
 def _say_ingredients(product):
@@ -334,7 +336,7 @@ def _nutrition(product):
     with st.container(border=True):
         with st.container(horizontal=True, vertical_alignment="center"):
             _section("📊 Nutrition · % daily value")
-            mode = _tools(pid, "nut")
+            _tools(pid, "nut")
         rows = [{"nutrient": k.replace("_", " "), "dv": v["dv"]} for k, v in per.items()
                 if isinstance(v, dict) and v.get("dv") is not None]
         if rows:
@@ -363,8 +365,7 @@ def _nutrition(product):
                 records.mark_no_nutrition(pid)
                 st.toast("Marked: no nutrition")
                 _refresh()
-        if mode == "cam":
-            product_ui.label_photo(product, f"ii_labn_{pid}", inline=True)
+
 
 
 def _edit_names(product):
