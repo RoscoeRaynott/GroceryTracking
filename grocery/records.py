@@ -407,6 +407,60 @@ def rename_product(product_id, name, brand):
                                                if b.get("product_id") == product_id})
 
 
+_SIZE = re.compile(r"[,(]?\s*(\d+(\.\d+)?\s*(x|×)\s*)?\d+(\.\d+)?\s*-?\s*(fl\.?\s*oz|oz|lbs?|lb|g|kg|ml|l|gal|ct|count|pack|pk|rolls?|pieces?)\b\.?\)?", re.I)
+
+
+def short_name(product, item=None):
+    """What a product is, without brand or size: "Shan Chicken White Karahi Masala, 50 g" -> "Chicken White Karahi
+    Masala". Falls back to the item's name when the product isn't more specific."""
+    item_name = (item or {}).get("name") or (product or {}).get("item", "")
+    if not product:
+        return item_name
+    name = str(product.get("name") or "")
+    brands = {str(product.get("brand") or ""), "Kirkland Signature", *[b.title() for b in STORE_BRANDS]}
+    for brand in sorted(brands, key=len, reverse=True):
+        if brand and name.lower().startswith(brand.lower() + " "):
+            name = name[len(brand):].strip()
+            break
+    name = _SIZE.sub("", name)
+    name = re.sub(r"\((frozen|fresh)\)", "", name, flags=re.I)
+    name = re.sub(r"\s+", " ", name).strip(" ,-–")
+    return name or item_name
+
+
+def needs_own_item(product, item):
+    """The exact name says more than a generic item ("Spice mix" for a Chicken White Karahi masala)."""
+    def stems(text):
+        return {w[:-3] + "y" if w.endswith("ies") else w[:-2] if w.endswith("oes") else w.rstrip("s")
+                for w in re.findall(r"[a-z0-9]+", str(text).lower())}
+    exact = short_name(product, item)
+    return bool(exact) and not stems(item.get("name", "")) <= stems(exact)
+
+
+def move_to_item(product_id, item_name):
+    """Give this product (and its purchases) its own item, e.g. one masala out of "Spice mix", so its shelf life
+    is learned on its own. Joins an item with that name if you already have one. The old item keeps its other
+    products; it's removed only if nothing uses it any more."""
+    item_name = re.sub(r"\s+", " ", item_name).strip()
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), None)
+    if not product or not item_name:
+        return None
+    old = next((i for i in items() if i["item_id"] == product.get("item_id")), {})
+    target = next((i for i in items() if norm(i["name"]) == norm(item_name)), None)
+    if target is None:
+        target = dict(old, item_id=readable_id(slug(item_name), taken_ids("items", "item_id")), name=item_name,
+                      created_at=timeutil.now_str(), photo_url="", no_expiry="")
+        sheets.append_rows("items", [target])
+    sheets.update_rows("products", "product_id", {product_id: {"item_id": target["item_id"], "item": target["name"]}})
+    sheets.update_rows("batches", "batch_id", {b["batch_id"]: {"item_id": target["item_id"], "item": target["name"]}
+                                               for b in sheets.read_tab("batches") if b.get("product_id") == product_id})
+    still_used = any(b.get("item_id") == old.get("item_id") for b in sheets.read_tab("batches")) or \
+        any(p.get("item_id") == old.get("item_id") for p in sheets.read_tab("products"))
+    if old and not still_used:
+        sheets.remove_rows("items", lambda r: r.get("item_id") == old["item_id"])
+    return target["item_id"]
+
+
 def save_ingredients(product_id, ingredients, source="Said by you"):
     sheets.update_rows("products", "product_id", {product_id: {
         "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
@@ -415,7 +469,8 @@ def save_ingredients(product_id, ingredients, source="Said by you"):
 LABEL_COLS = ("serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv")
 
 
-def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=None, new_brand=None, replace=()):
+def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=None, new_brand=None, replace=(),
+                     new_item=None):
     """Save a lookup / scan match: fill only what's still empty (and the photo, if you want it). What a photo of
     the label read replaces earlier label info, since the label always wins. new_name / new_brand: the exact
     name and brand it identified, when you chose to use them. Returns the names of the fields that changed."""
@@ -443,6 +498,9 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
         rename_product(product_id, new_name or product.get("name", ""),
                        new_brand if new_brand is not None else product.get("brand", ""))
         filled.append("name")
+    if new_item:
+        move_to_item(product_id, new_item)
+        filled.append("item")
     if info.get("pack_units") and (use_pack or not _float(product.get("pack_size"))):
         apply_pack_size(product_id, info["pack_units"], info.get("pack_unit") or "each", count=info.get("pack_count"),
                         recount=use_pack)
