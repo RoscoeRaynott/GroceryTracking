@@ -222,7 +222,9 @@ def _find_info(product, item):
         if records.needs_own_item({"name": f_name or product["name"], "brand": f_brand or product.get("brand", "")}, item):
             st.markdown(f"Item: :red-badge[{item.get('name', '')}] → :green-badge[{exact}] "
                         ":gray[its own item, so its shelf life is learned on its own]")
-            if st.checkbox("Make it its own item", value=True, key=f"{key}_item"):
+            # Ticked when the item lumps several products together (two masalas under "Spice mix").
+            shared = sum(1 for p in records.products() if p.get("item_id") == item.get("item_id")) > 1
+            if st.checkbox("Make it its own item", value=shared, key=f"{key}_item"):
                 new_item = st.text_input("Item name", value=exact, key=f"{key}_item_name").strip() or None
         if found.get("pack_units") and not records._float(product.get("pack_size")):
             each = found["pack_units"] / (found.get("pack_count") or 1)
