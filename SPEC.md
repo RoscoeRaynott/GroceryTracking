@@ -398,7 +398,7 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Nutrition** as a %DV bar chart, highest first: 🟢 ≤5% low, 🟠 medium, 🔴 ≥20% high (FDA rule of thumb), with a 📸 button.
   - **Name, brand, nicknames** editing; barcode and page link.
 - **Profile completion bar (built):** every Pantry card and the item panel show a bar like a website's profile completion, e.g. ▰▰▰▰▰▱▱▱▱▱ 50%: red under 40%, orange under 80%, green from 80%. The panel lists each field as a chip, green ✓ when known and gray when missing.
-  - **Packaged products:** photo, kept in, brand, pack size, ingredients, nutrition, barcode, **at least one nickname** (so voice understands it next time), plus expiry for perishables.
+  - **Packaged products:** photo, kept in, brand, pack size, ingredients, nutrition, **at least one nickname** (barcode does **not** count: it's only a way to find the product) (so voice understands it next time), plus expiry for perishables.
   - **Loose items:** photo, kept in, plus expiry for perishables.
   - **🌿 Single ingredient** (next to Ingredients when missing): saves the product itself as the only ingredient (e.g. "Turmeric powder") and counts as done.
   - **🚫 No nutrition** (next to Nutrition when missing): you confirm there's nothing worth tracking; it counts as done (products column `nutrition_status` = "none").

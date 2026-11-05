@@ -90,6 +90,7 @@ Return only JSON, no other text:
 {{
   "product_found": true if you identified the product (label info not required),
   "matched_name": the product's full name as listed, "matched_url": its product page URL,
+  "matched_brand": the brand as printed on the product or its page (e.g. "Kirkland Signature"), or "",
   "image_url": the direct URL of the product's main photo if you saw one, else "",
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
   "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "200 g", "2 x 1 gal"), or "",
@@ -235,6 +236,7 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
     info["reason"] = result.get("reason", "")
     info["pack_text"] = result.get("pack_text") or ""
     info["size_note"] = result.get("size_note") or ""
+    info["brand"] = info.get("brand") or result.get("matched_brand") or ""
     if barcode:
         info["barcode"] = barcode
     count, each = _num(result.get("pack_count")), _num(result.get("each_in_unit"))
