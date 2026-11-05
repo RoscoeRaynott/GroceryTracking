@@ -435,6 +435,14 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False):
     return filled
 
 
+def set_bought(batch_id, units, packs=None):
+    """Fix how much one purchase was: packs bought (with the product's pack size) or the amount itself."""
+    change = {"units": round(units, 4)}
+    if packs is not None:
+        change["packs"] = packs
+    sheets.update_rows("batches", "batch_id", {batch_id: change})
+
+
 def mark_no_nutrition(product_id):
     """You checked: no nutrition label worth tracking (e.g. a spice). Counts as done."""
     sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": "none"}})

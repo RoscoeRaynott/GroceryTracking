@@ -9,11 +9,11 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from grocery import analytics, events, productinfo, recorder, records, sheets, voice
+from grocery import analytics, camera, events, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views import product_ui
-from grocery.views.amounts import amount_text, pack_input
+from grocery.views.amounts import amount_input, amount_text, pack_input
 
 OPEN = "pantry_open"
 PLACE_ICONS = {"Freezer": "🧊", "Fridge": "❄️", "Open air": "🧺"}
@@ -66,7 +66,7 @@ def _panel(bid):
     product = next((p for p in records.products() if p["product_id"] == batch.get("product_id")), None)
     # Header: picture, names, and how complete its profile is (green chips known, gray still missing)
     with st.container(horizontal=True, vertical_alignment="center"):
-        product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
+        _picture(product, item)
         brand = f"  \n:gray[{product.get('brand')}]" if product and product.get("brand") else ""
         st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}")
         if product:
@@ -77,12 +77,11 @@ def _panel(bid):
         f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
 
     if product:
-        _redo_search(product, item)
+        _find_info(product, item)
 
     # At a glance
     days = _days_open(batch)
     facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]",
-             f":violet-badge[🛒 {amount_text(batch.get('units'), batch.get('unit'))}]",
              f":gray-badge[⏱ {days}d open]"]
     if batch.get("price_paid"):
         facts.insert(1, f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
@@ -92,6 +91,7 @@ def _panel(bid):
     with st.container(horizontal=True, gap="small"):
         _kept(item)
         _expiry(batch)
+        _bought(batch, product)
         if product:
             _pack(product, item)
     if product:
@@ -111,31 +111,53 @@ FIELD_NAMES = {"photo_url": "photo", "serving_size": "serving size", "servings_p
                "info_url": "page link", "pack size": "pack size"}
 
 
-def _redo_search(product, item):
-    """Big-chain / store-brand products: search that store's own site again and fill what's still missing."""
+def _picture(product, item):
+    """The picture; tap the 🔍 to see it big."""
+    product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
+    url = (product or {}).get("photo_url") or (item.get("photo_url") if item.get("photo_url") not in ("", "none") else "")
+    if url:
+        with st.popover("", icon=":material/zoom_in:", key=f"ii_zoom_{item.get('item_id')}_{(product or {}).get('product_id', '')}"):
+            st.image(url, width="stretch")
+
+
+def _find_info(product, item):
+    """Find what's missing: search (the store's own site for chain / store-brand products, else anywhere),
+    or scan the barcode or label. A match is previewed and fills only what's empty."""
     store = records.lookup_store(product)
-    if not store:
-        return
     pid = product["product_id"]
     key = f"ii_redo_{pid}"
     found = st.session_state.get(key)
     if found is None:
-        if st.button(f"🔎 Redo search on {store}'s site", key=f"{key}_go", type="secondary", width="stretch",
-                     help=f"Look this product up on {store}'s own website and fill in what's missing"):
-            with st.spinner(f"Searching {store}'s site…"):
-                try:
-                    st.session_state[key] = productinfo.web_lookup(
-                        sheets.get_settings()["model_lookup"], records.product_search_text(product),
-                        product.get("pack_unit") or item.get("unit") or "each", store=store)
-                except productinfo.NotFound as ex:
-                    st.session_state[key] = {"missing": str(ex) or "Not found."}
-                except Exception as ex:
-                    st.session_state[key] = {"missing": f"Search failed: {ex}"}
+        unit = product.get("pack_unit") or item.get("unit") or "each"
+        label = f"🔎 Redo search on {store}'s site" if store else "🔎 Look it up online"
+        with st.container(horizontal=True, gap="small"):
+            go_search = st.button(label, key=f"{key}_go", type="secondary",
+                                  help="Search the web and fill in what's missing")
+            with st.popover("", icon=":material/edit_note:", key=f"{key}_words", help="Search words"):
+                st.text_area("Search for", value=records.product_search_text(product), key=f"ii_q_{pid}",
+                             help="Fix or add words to make the search exact")
+            with st.popover("📷 Scan", key=f"{key}_scan", help="Scan the barcode, or photograph the label"):
+                got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
+                st.caption("A barcode is looked up; a photo goes to the label photos below.")
+        if go_search:
+            with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
+                st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
+                    sheets.get_settings()["model_lookup"], st.session_state.get(f"ii_q_{pid}") or
+                    records.product_search_text(product), unit, store=store))
+            _refresh()
+        if got and got[0] == "barcode":
+            with st.spinner("Looking up the barcode…"):
+                st.session_state[key] = _lookup(lambda: productinfo.by_barcode(
+                    sheets.get_settings()["model_lookup"], got[1], records.product_search_text(product), unit, store))
+            _refresh()
+        elif got:
+            st.session_state.setdefault(f"ii_lab_{pid}_q", []).append(got[1])
+            st.session_state[f"ii_cam_{pid}"] = True
             _refresh()
         return
     with st.container(border=True):
         if found.get("missing"):
-            st.warning(f"Not found on {store}'s site. {found['missing']}")
+            st.warning(f"Not found{f' on {store}' + chr(39) + 's site' if store else ''}. {found['missing']}")
             if st.button("OK", key=f"{key}_ok"):
                 st.session_state.pop(key, None)
                 _refresh()
@@ -143,7 +165,7 @@ def _redo_search(product, item):
         with st.container(horizontal=True, vertical_alignment="center"):
             if found.get("photo_url"):
                 st.image(found["photo_url"], width=64)
-            st.markdown(f"**{found.get('name', '')}**  \n:gray[{store} · is this it?]")
+            st.markdown(f"**{found.get('name', '')}**  \n:gray[{found.get('source', '')} · is this it?]")
         if found.get("url"):
             st.markdown(f"[Open the page it used]({found['url']})")
         cols = productinfo.product_columns(found)
@@ -176,6 +198,43 @@ def _redo_search(product, item):
                 _refresh()
             if st.button("Not this", key=f"{key}_no"):
                 st.session_state.pop(key, None)
+                _refresh()
+
+
+def _lookup(fetch):
+    try:
+        return fetch()
+    except productinfo.NotFound as ex:
+        return {"missing": str(ex) if " " in str(ex) else "Not found."}
+    except Exception as ex:
+        return {"missing": f"Search failed: {ex}"}
+
+
+def _bought(batch, product):
+    """🛒 How much this purchase was: packs bought × the store's pack, or just the amount. Fixable anytime."""
+    bid, unit = batch["batch_id"], batch.get("unit") or "each"
+    units = records._float(batch.get("units")) or 0.0
+    size = records._float((product or {}).get("pack_size")) if (product or {}).get("pack_unit") in ("", None, unit) else None
+    packs = records._float(batch.get("packs"))
+    if size and packs and packs >= 1 and abs(packs - round(packs)) < 1e-9:
+        label = f"🛒 {packs:g} pack{'s' if packs != 1 else ''} · {amount_text(units, unit)}"
+    else:
+        label = f"🛒 {amount_text(units, unit)}"
+    with st.popover(label, key=f"ii_boughtpop_{bid}"):
+        st.caption("What you bought this time")
+        if size:
+            n = st.number_input("Packs bought", value=float(packs or round(units / size, 2) or 1.0), min_value=0.0,
+                                step=1.0, format="%g", key=f"ii_packs_bought_{bid}")
+            st.caption(f"= {n:g} × {amount_text(size, unit)} = **{amount_text(n * size, unit)}**")
+            if abs(n * size - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
+                records.set_bought(bid, n * size, n)
+                st.toast(f"Bought: {amount_text(n * size, unit)}")
+                _refresh()
+        else:
+            new = amount_input("Amount bought", units, unit, key=f"ii_amount_bought_{bid}")
+            if new is not None and abs(new - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
+                records.set_bought(bid, new)
+                st.toast(f"Bought: {amount_text(new, unit)}")
                 _refresh()
 
 
@@ -294,7 +353,7 @@ def _pack(product, item):
     old_count = records._float(product.get("pack_count"))
     if known:
         n = int(old_count or 1)
-        label = f"📦 {n} × {amount_text(known / n, unit)}" if n > 1 else f"📦 {amount_text(known, unit)} pack"
+        label = f"📦 pack: {n} × {amount_text(known / n, unit)}" if n > 1 else f"📦 pack: {amount_text(known, unit)}"
     else:
         label = "📦 pack size?"
     with st.popover(label, key=f"ii_packpop_{pid}"):
