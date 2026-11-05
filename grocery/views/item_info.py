@@ -141,6 +141,8 @@ def _redo_search(product, item):
         if found.get("pack_units") and not records._float(product.get("pack_size")):
             each = found["pack_units"] / (found.get("pack_count") or 1)
             new.append(f"pack size {found.get('pack_count') or 1:g} × {each:g} {found.get('pack_unit', '')}")
+        if found.get("brand") and not product.get("brand"):
+            new.insert(0, f"brand {found['brand']}")
         if found.get("barcode") and not product.get("barcode"):
             new.append("barcode")
         st.markdown("Would fill: " + (" ".join(f":green-badge[+ {n}]" for n in new) or ":gray[nothing new]"))

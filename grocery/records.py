@@ -271,8 +271,16 @@ def info_gaps(product, item, batches):
     return gaps
 
 
+def _brand_if_missing(product_id, info):
+    """A lookup's brand, only when the product has none yet (a brand you typed always stays)."""
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
+    brand = str(info.get("brand") or "").strip()
+    return {"brand": brand} if brand and not str(product.get("brand") or "").strip() else {}
+
+
 def save_product_info(product_id, info, barcode=""):
     changes = productinfo.product_columns(info)
+    changes.update(_brand_if_missing(product_id, info))
     if barcode:
         changes["barcode"] = barcode
     sheets.update_rows("products", "product_id", {product_id: changes})
@@ -344,6 +352,7 @@ def save_product_match(product_id, info):
         "info_status": "none", "info_source": "Web search", "info_url": info.get("url", ""), "details": details,
         **({"photo_url": info["photo_url"]} if info.get("photo_url") else {}),
         **({"barcode": info["barcode"]} if info.get("barcode") else {}),
+        **_brand_if_missing(product_id, info),
     }})
 
 
@@ -407,6 +416,7 @@ def fill_from_lookup(product_id, info, use_photo=True):
         change["photo_url"] = info["photo_url"]
     if info.get("barcode") and not product.get("barcode"):
         change["barcode"] = info["barcode"]
+    change.update(_brand_if_missing(product_id, info))
     if change.get("ingredients") or change.get("nutrients_json"):
         change.update(info_status="confirmed", info_source=info.get("source", "Web search"), info_url=info.get("url", ""))
     elif info.get("url") and not product.get("info_url"):
@@ -439,7 +449,6 @@ def completeness(product, item, batch):
             ("pack size", bool(_float(product.get("pack_size")))),
             ("ingredients", bool(product.get("ingredients")) or no_label),
             ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
-            ("barcode", bool(product.get("barcode"))),
             ("nickname", bool(nicknames(product))),
         ]
     return checks
