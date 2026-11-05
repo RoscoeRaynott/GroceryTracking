@@ -75,18 +75,19 @@ def _panel(bid):
     # At a glance
     days = _days_open(batch)
     facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]",
-             f":violet-badge[📦 {amount_text(batch.get('units'), batch.get('unit'))}]",
+             f":violet-badge[🛒 {amount_text(batch.get('units'), batch.get('unit'))}]",
              f":gray-badge[⏱ {days}d open]"]
     if batch.get("price_paid"):
         facts.insert(1, f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
-    if batch.get("expiry_date"):
-        facts.append(f":orange-badge[⏳ exp {batch['expiry_date']}]")
     st.markdown(" ".join(facts))
 
-    _kept(item)
-    _expiry(batch)
+    # Kept in · expires · pack: one compact row; tap a chip to change it
+    with st.container(horizontal=True, gap="small"):
+        _kept(item)
+        _expiry(batch)
+        if product:
+            _pack(product, item)
     if product:
-        _pack(product, item)
         _ingredients(product, item)
         _nutrition(product)
         _names(product)
@@ -168,19 +169,20 @@ def _section(title):
 def _kept(item):
     if item.get("kind") == "One-time":
         return
-    with st.container(border=True):
-        _section("📍 Kept in · every time you buy it")
-        current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
+    current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
+    perishable = item.get("perishable") == "yes"
+    label = f"{PLACE_ICONS.get(current, '')} {current} · {'perishable' if perishable else 'keeps'}"
+    with st.popover(label, key=f"ii_keptpop_{item['item_id']}"):
+        st.caption("Every time you buy it")
         choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"ii_kept_{item['item_id']}",
                                       format_func=lambda s: f"{PLACE_ICONS.get(s, '')} {s}",
                                       label_visibility="collapsed")
-        perishable = st.toggle("Goes bad (perishable)", value=item.get("perishable") == "yes",
-                               key=f"ii_per_{item['item_id']}")
+        goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=f"ii_per_{item['item_id']}")
         change = {}
         if choice and choice != current:
             change["storage"] = choice
-        if perishable != (item.get("perishable") == "yes"):
-            change["perishable"] = "yes" if perishable else "no"
+        if goes_bad != perishable:
+            change["perishable"] = "yes" if goes_bad else "no"
         if change:
             records.set_item(item["item_id"], **change)
             st.toast(f"{item['name']}: saved for every purchase")
@@ -189,25 +191,29 @@ def _kept(item):
 
 def _expiry(batch):
     import datetime as dt
-    with st.container(border=True):
-        _section("⏳ Expires (this purchase)")
-        current = dt.date.fromisoformat(batch["expiry_date"]) if batch.get("expiry_date") else None
-        with st.container(horizontal=True, vertical_alignment="bottom"):
-            day = st.date_input("Expiry date", value=current, key=f"ii_exp_{batch['batch_id']}",
-                                format="MM/DD/YYYY", label_visibility="collapsed")
-            if day and day != current and st.button("Save", key=f"ii_exps_{batch['batch_id']}", type="primary"):
-                events.apply([{"type": "expiry", "batch": batch, "expiry_date": day.isoformat()}],
-                             said="Pantry: expiry set", source="pantry")
-                st.toast("Expiry saved · Undo in History")
-                _refresh()
+    current = dt.date.fromisoformat(batch["expiry_date"]) if batch.get("expiry_date") else None
+    label = f"⏳ exp {current:%b %d}" if current else "⏳ no expiry"
+    with st.popover(label, key=f"ii_exppop_{batch['batch_id']}"):
+        st.caption("This purchase only")
+        day = st.date_input("Expiry date", value=current, key=f"ii_exp_{batch['batch_id']}",
+                            format="MM/DD/YYYY", label_visibility="collapsed")
+        if day and day != current and st.button("Save", key=f"ii_exps_{batch['batch_id']}", type="primary"):
+            events.apply([{"type": "expiry", "batch": batch, "expiry_date": day.isoformat()}],
+                         said="Pantry: expiry set", source="pantry")
+            st.toast("Expiry saved · Undo in History")
+            _refresh()
 
 
 def _pack(product, item):
     pid, unit = product["product_id"], product.get("pack_unit") or item.get("unit") or "each"
     known = records._float(product.get("pack_size"))
-    with st.container(border=True):
-        _section("📦 One pack" + ("" if known else "  :orange-badge[size?]"))
-        old_count = records._float(product.get("pack_count"))
+    old_count = records._float(product.get("pack_count"))
+    if known:
+        n = int(old_count or 1)
+        label = f"📦 {n} × {amount_text(known / n, unit)}" if n > 1 else f"📦 {amount_text(known, unit)} pack"
+    else:
+        label = "📦 pack size?"
+    with st.popover(label, key=f"ii_packpop_{pid}"):
         size, count = pack_input(known, old_count, unit, key=f"ii_pack_{pid}")
         if size and (abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \
                 and st.button("Save pack size", key=f"ii_packs_{pid}", type="primary"):
