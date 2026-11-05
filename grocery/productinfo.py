@@ -66,6 +66,8 @@ INFO_SHAPE = f"""{{
 LABEL_PROMPT = f"""These photos show the packaging of ONE food or drink product: front, ingredients
 list and/or Nutrition Facts panel. Read exactly what is printed. Never guess values that are not
 visible; use null for anything you cannot read.
+If the front of the pack is shown, "name" is the FULL product name exactly as printed, with its variety or flavour
+(e.g. "Chicken White Karahi Masala", not just "Masala"), and "brand" is the brand.
 The label may be in any language (Bengali, Hindi, Arabic, Chinese…): read it and write everything in English.
 If the nutrition table gives values per 100 g (or 100 ml) instead of per serving, set "serving_size" to
 "100 g" (or "100 ml") and give the amounts per 100 g. Give "dv" only where a % daily value is printed,
@@ -264,9 +266,11 @@ def read_label(model, jpegs):
 def with_label(found, label):
     """A web/barcode match plus what the label photo says: the label wins for ingredients and nutrition."""
     out = dict(found)
+    out["from_photo"] = []
     for key in ("serving_size", "servings_per_pack", "ingredients", "nutrients", "abv"):
         if label.get(key):
             out[key] = label[key]
+            out["from_photo"].append("nutrients_json" if key == "nutrients" else key)
     out["source"] = f"{found.get('source') or 'Web search'} + label photo"
     out["no_label_info"] = not (out.get("ingredients") or out.get("nutrients"))
     return out
@@ -493,3 +497,24 @@ def lab_lookup(model, part, query, unit="each", store=""):
                   else GENERAL_RULE)
     prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST)
     return gemini.search_json(f"lab_{part}", model, prompt)
+
+
+def identify_then_search(model, found, unit="each", store=""):
+    """A barcode or a photo of the pack told us exactly what it is: search the web with that exact name for the
+    photo, pack size and label info. What a photo of the label read always wins; the barcode is kept."""
+    name = str(found.get("name") or "").strip()
+    if not name:
+        return found
+    brand = str(found.get("brand") or "").strip()
+    query = name if brand.lower() in name.lower() else f"{brand} {name}".strip()
+    try:
+        web = web_lookup(model, query, unit, barcode=found.get("barcode", ""), store=store)
+    except Exception:
+        return found  # the identification alone is still worth showing
+    from_label = "label photo" in str(found.get("source", "")).lower()
+    merged = with_label(web, found) if from_label else dict(web)
+    merged["barcode"] = found.get("barcode") or web.get("barcode", "")
+    merged["brand"] = brand or web.get("brand", "")
+    if from_label:
+        merged["name"] = name  # printed on the pack in your hand
+    return merged

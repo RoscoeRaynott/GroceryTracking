@@ -146,21 +146,25 @@ def _find_info(product, item):
                              help="Fix or add words to make the search exact")
             with st.popover("📷 Scan", key=f"{key}_scan", help="Scan the barcode, or photograph the label"):
                 got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
-                st.caption("A barcode is looked up; a photo goes to the label photos below.")
+                st.caption("Point at the barcode, or photograph the front (name) or the label.")
         if go_search:
             with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
                 st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
                     sheets.get_settings()["model_lookup"], st.session_state.get(_k(f"ii_q_{pid}", records.product_search_text(product)))
                     or records.product_search_text(product), unit, store=store))
             _refresh()
+        settings = sheets.get_settings()
         if got and got[0] == "barcode":
-            with st.spinner("Looking up the barcode…"):
-                st.session_state[key] = _lookup(lambda: productinfo.by_barcode(
-                    sheets.get_settings()["model_lookup"], got[1], records.product_search_text(product), unit, store))
+            with st.spinner("Looking up the barcode, then searching with its exact name…"):
+                st.session_state[key] = _lookup(lambda: productinfo.identify_then_search(
+                    settings["model_lookup"], productinfo.by_barcode(
+                        settings["model_lookup"], got[1], records.product_search_text(product), unit, store), unit, store))
             _refresh()
-        elif got:
-            st.session_state.setdefault(f"ii_lab_{pid}_q", []).append(got[1])
-            st.session_state[f"ii_cam_{pid}"] = True
+        elif got:  # a photo of the front (name) or the label: read it, then search with what it says
+            with st.spinner("Reading the photo, then searching with its exact name…"):
+                st.session_state[key] = _lookup(lambda: productinfo.identify_then_search(
+                    settings["model_lookup"], productinfo.read_label(settings["model_labels"], [got[1]["data"]]),
+                    unit, store))
             _refresh()
         return
     with st.container(border=True):
@@ -177,8 +181,21 @@ def _find_info(product, item):
         if found.get("url"):
             st.markdown(f"[Open the page it used]({found['url']})")
         cols = productinfo.product_columns(found)
-        new = [FIELD_NAMES.get(k, k) for k in ("serving_size", "ingredients", "nutrients_json", "abv")
-               if cols.get(k) and not product.get(k)]
+        photo = found.get("from_photo") or ([k for k in ("serving_size", "ingredients", "nutrients_json", "abv") if cols.get(k)]
+                                            if found.get("source") == "Label photo" else [])
+        new = [FIELD_NAMES.get(k, k) + (" (from your photo)" if k in photo else "")
+               for k in ("serving_size", "ingredients", "nutrients_json", "abv")
+               if cols.get(k) and (not product.get(k) or k in photo)]
+        new_name = new_brand = None
+        f_name, f_brand = str(found.get("name") or "").strip(), str(found.get("brand") or "").strip()
+        if f_name and records.norm(f_name) != records.norm(product["name"]):
+            st.markdown(f"Name: :red-badge[{product['name']}] → :green-badge[{f_name}]")
+            if st.checkbox("Use the found name", value=True, key=f"{key}_name"):
+                new_name = f_name
+        if f_brand and product.get("brand") and records.norm(f_brand) != records.norm(product["brand"]):
+            st.markdown(f"Brand: :red-badge[{product['brand']}] → :green-badge[{f_brand}]")
+            if st.checkbox("Use the found brand", value=True, key=f"{key}_brand"):
+                new_brand = f_brand
         if found.get("pack_units") and not records._float(product.get("pack_size")):
             each = found["pack_units"] / (found.get("pack_count") or 1)
             new.append(f"pack size {found.get('pack_count') or 1:g} × {each:g} {found.get('pack_unit', '')}")
@@ -199,8 +216,9 @@ def _find_info(product, item):
                             f":green-badge[{n_found} × {amount_text(found['pack_units'] / n_found, unit)}]")
                 use_pack = st.checkbox("Use the found pack", value=True, key=f"{key}_pack")
         with st.container(horizontal=True):
-            if st.button("Yes, fill it in", key=f"{key}_yes", type="primary", disabled=not (new or use_photo or use_pack)):
-                filled = records.fill_from_lookup(pid, found, use_photo, use_pack)
+            if st.button("Yes, use it", key=f"{key}_yes", type="primary",
+                         disabled=not (new or use_photo or use_pack or new_name or new_brand)):
+                filled = records.fill_from_lookup(pid, found, use_photo, use_pack, new_name, new_brand)
                 st.session_state.pop(key, None)
                 st.toast("Filled: " + ", ".join(FIELD_NAMES.get(f, f) for f in filled) if filled else "Nothing new")
                 _refresh()
