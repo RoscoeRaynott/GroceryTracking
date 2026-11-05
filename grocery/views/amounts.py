@@ -52,9 +52,13 @@ def pack_input(total, count, unit, key):
     count = int(count) if count and float(count) >= 1 else 1
     each = total / count if total else None
     n = st.number_input("Items in one pack", value=count, min_value=1, step=1, key=f"{key}_n",
-                        help="How many separate items the store sells together as one pack (a 2-jar box = 2)")
+                        help="How many separate items the store sells together as one pack (a 12-roll pack = 12)")
+    if unit == "each":  # counted in items: one item is 1 each, nothing more to ask
+        st.caption(f"1 pack = **{n} each**")
+        return float(n), n
     size = amount_input("Size of one item", each, unit, key=f"{key}_each", placeholder=f"{unit} in one item")
     if size is None:
+        st.caption(f"Type the size of one item ({unit}) to save.")
         return None, n
     st.caption(f"1 pack = {n} × {amount_text(size, unit)} = **{amount_text(n * size, unit)}**")
     return n * size, n

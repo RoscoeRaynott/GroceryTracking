@@ -78,7 +78,7 @@ def _kept_in(item):
     if item.get("kind") == "One-time":
         return
     current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
-    choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"kept_{item['item_id']}")
+    choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"kept_{item['item_id']}_{current}")
     if choice and choice != current:
         sheets.update_rows("items", "item_id", {item["item_id"]: {"storage": choice}})
         st.toast(f"{item['name']} now kept in {choice}")
