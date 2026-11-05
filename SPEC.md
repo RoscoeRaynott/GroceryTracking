@@ -390,7 +390,7 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Pantry item panel (built):** tap an item's name in Pantry to open a **side drawer** (Streamlit dialog, `position="right"`). Tapping outside or ✕ closes it; it stays open while you save things.
   - Header: photo, product name, brand, and a completeness badge (✅ info complete / 📏 pack size? / 🧾 ingredients?). Pantry cards show the same badge.
   - At-a-glance badges: bought date and store, price, amount (e.g. "1 lb 6 oz"), days open, expiry.
-  - **Kept in** (Freezer / Fridge / Open air) and **perishable**: saved on the item, so they apply to every future purchase.
+  - **Compact row of tap-to-edit chips** (decided): `❄️ Fridge · perishable` (kept in + perishable, saved on the item for every future purchase), `⏳ no expiry` / `⏳ exp Nov 10` (this purchase), `📦 2 × 32 oz` (pack size). Tapping a chip opens its small editor; the big boxes are gone.
   - **Expiry** for this purchase (an undoable event).
   - **One pack** size, with lb + oz or gal + fl oz boxes.
   - **Ingredients** as chips, with small 🎤 (read them out; the AI writes the list, you confirm) and 📸 (label camera) buttons, always there so info can be replaced.
