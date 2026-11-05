@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from grocery import events, recorder, records, voice
+from grocery import events, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
 from grocery.schema import STORAGE
 from grocery.views import product_ui
@@ -69,6 +69,9 @@ def _panel(bid):
     st.markdown(profile_bar(checks) + "  \n" + " ".join(
         f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
 
+    if product:
+        _redo_search(product, item)
+
     # At a glance
     days = _days_open(batch)
     facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]",
@@ -89,6 +92,67 @@ def _panel(bid):
         _names(product)
     else:
         st.caption("Loose item: no package details to fill in.")
+
+
+FIELD_NAMES = {"photo_url": "photo", "serving_size": "serving size", "servings_per_pack": "servings",
+               "ingredients": "ingredients", "nutrients_json": "nutrition", "abv": "ABV", "barcode": "barcode",
+               "info_url": "page link", "pack size": "pack size"}
+
+
+def _redo_search(product, item):
+    """Big-chain / store-brand products: search that store's own site again and fill what's still missing."""
+    store = records.lookup_store(product)
+    if not store:
+        return
+    pid = product["product_id"]
+    key = f"ii_redo_{pid}"
+    found = st.session_state.get(key)
+    if found is None:
+        if st.button(f"🔎 Redo search on {store}'s site", key=f"{key}_go", type="secondary", width="stretch",
+                     help=f"Look this product up on {store}'s own website and fill in what's missing"):
+            with st.spinner(f"Searching {store}'s site…"):
+                try:
+                    st.session_state[key] = productinfo.web_lookup(
+                        sheets.get_settings()["model_lookup"], records.product_search_text(product),
+                        product.get("pack_unit") or item.get("unit") or "each", store=store)
+                except productinfo.NotFound as ex:
+                    st.session_state[key] = {"missing": str(ex) or "Not found."}
+                except Exception as ex:
+                    st.session_state[key] = {"missing": f"Search failed: {ex}"}
+            _refresh()
+        return
+    with st.container(border=True):
+        if found.get("missing"):
+            st.warning(f"Not found on {store}'s site. {found['missing']}")
+            if st.button("OK", key=f"{key}_ok"):
+                st.session_state.pop(key, None)
+                _refresh()
+            return
+        with st.container(horizontal=True, vertical_alignment="center"):
+            if found.get("photo_url"):
+                st.image(found["photo_url"], width=64)
+            st.markdown(f"**{found.get('name', '')}**  \n:gray[{store} · is this it?]")
+        if found.get("url"):
+            st.markdown(f"[Open the page it used]({found['url']})")
+        cols = productinfo.product_columns(found)
+        new = [FIELD_NAMES.get(k, k) for k in ("serving_size", "ingredients", "nutrients_json", "abv")
+               if cols.get(k) and not product.get(k)]
+        if found.get("pack_units") and not records._float(product.get("pack_size")):
+            each = found["pack_units"] / (found.get("pack_count") or 1)
+            new.append(f"pack size {found.get('pack_count') or 1:g} × {each:g} {found.get('pack_unit', '')}")
+        if found.get("barcode") and not product.get("barcode"):
+            new.append("barcode")
+        st.markdown("Would fill: " + (" ".join(f":green-badge[+ {n}]" for n in new) or ":gray[nothing new]"))
+        use_photo = st.checkbox("Use this photo", value=True, key=f"{key}_photo") if found.get("photo_url") else False
+        with st.container(horizontal=True):
+            if st.button("Yes, fill it in", key=f"{key}_yes", type="primary", disabled=not (new or use_photo)):
+                filled = records.fill_from_lookup(pid, found, use_photo)
+                st.session_state.pop(key, None)
+                st.toast("Filled: " + ", ".join(FIELD_NAMES.get(f, f) for f in filled) if filled else "Nothing new")
+                _refresh()
+            if st.button("Not this", key=f"{key}_no"):
+                st.session_state.pop(key, None)
+                _refresh()
 
 
 def _days_open(batch):
