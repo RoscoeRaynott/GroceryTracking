@@ -539,9 +539,19 @@ def _quietly(fn, *args):
         return False
 
 
+NO_NUTRITION = "chosen"
+
+
+def nutrition_done(product):
+    """Nutrition is done when it has values, or you chose "No nutrition" with the USDA option there."""
+    return bool(product.get("nutrients_json")) or product.get("nutrition_status") == NO_NUTRITION
+
+
 def mark_no_nutrition(product_id):
     """You checked: no nutrition label worth tracking (e.g. a spice). Counts as done."""
-    sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": "none"}})
+    # "chosen": decided with typical USDA nutrition on offer. Older "none" marks were made before that
+    # existed, so for food they no longer count as done.
+    sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": NO_NUTRITION}})
 
 
 def completeness(product, item, batch):
@@ -553,7 +563,7 @@ def completeness(product, item, batch):
     if item.get("perishable") == "yes":
         checks.append(("expiry", bool(batch.get("expiry_date")) or item.get("no_expiry") == "yes"))
     if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition
-        checks.append(("nutrition", bool(product.get("nutrients_json")) or product.get("nutrition_status") == "none"))
+        checks.append(("nutrition", nutrition_done(product)))
     if packaged:
         no_label = product.get("info_status") == "none"
         checks += [("brand", bool(product.get("brand")) or product.get("no_brand") == "yes"),
@@ -561,7 +571,7 @@ def completeness(product, item, batch):
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
                 ("ingredients", bool(product.get("ingredients")) or no_label),
-                ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
+                ("nutrition", nutrition_done(product)),
             ]
     return checks
 

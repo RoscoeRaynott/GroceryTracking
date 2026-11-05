@@ -586,18 +586,28 @@ def _nutrition(product):
                 piece = records._float(product.get("piece_grams"))
                 st.caption(f"📚 Typical values from USDA ({product['info_source'].split(': ', 1)[-1]}), per 100 g"
                            + (f" · 1 piece ≈ {piece:g} g" if piece else ""))
-        elif product.get("info_status") == "none" or product.get("nutrition_status") == "none":
-            st.caption("No nutrition to track.")
+        elif product.get("nutrition_status") == records.NO_NUTRITION:
+            with st.container(horizontal=True, vertical_alignment="center"):
+                st.caption("You chose: no nutrition.")
+                if st.button("Undo", key=f"ii_nonut_undo_{pid}", type="tertiary"):
+                    records.sheets.update_rows("products", "product_id", {pid: {"nutrition_status": ""}})
+                    _refresh()
         else:
-            st.markdown(":orange-badge[missing] :gray[tap 📸 to photograph the nutrition panel]")
-            if st.button("🚫 No nutrition", key=f"ii_nonut_{pid}", type="tertiary",
-                         help="You've checked: there's no nutrition label worth tracking for this"):
-                records.mark_no_nutrition(pid)
-                st.toast("Marked: no nutrition")
-                _refresh()
-        # Loose food (or food already on typical values): typical nutrition from USDA, with a match you can change.
-        if product.get("packaged") == "no" or not rows or str(product.get("info_source", "")).startswith("USDA"):
-            _typical(product)
+            st.markdown(":orange-badge[missing] :gray[📸 photograph the panel, use typical values, or say there's none]")
+        # Two clear choices: typical USDA values, or no nutrition. Either one counts as done.
+        if not rows and product.get("nutrition_status") != records.NO_NUTRITION:
+            if st.session_state.get(f"ii_usda_{pid}") is not None:
+                _typical(product)  # the match picker is open: give it the full width
+                return
+            with st.container(horizontal=True):
+                _typical(product)
+                if st.button("🚫 No nutrition", key=f"ii_nonut_{pid}", type="tertiary",
+                             help="You've seen the typical values option and don't want nutrition for this"):
+                    records.mark_no_nutrition(pid)
+                    st.toast("Marked: no nutrition")
+                    _refresh()
+        elif str(product.get("info_source", "")).startswith("USDA"):
+            _typical(product)  # change the typical match
 
 
 def _typical(product):
