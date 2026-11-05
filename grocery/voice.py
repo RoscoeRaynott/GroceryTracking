@@ -263,3 +263,15 @@ Return only JSON: {{"heard": the full transcript, "nicknames": [each name as spo
 def nicknames_from_audio(audio, product_name=""):
     result = gemini.generate_json("nickname", model(), NICKNAME_PROMPT, [audio])
     return [n for n in result.get("nicknames", []) if isinstance(n, str) and n.strip()]
+
+
+INGREDIENTS_PROMPT = """The attached recording is the user reading out the ingredients list printed on a
+food package{product}. Write the ingredients in English as one comma-separated list, in the order said.
+Write only what you hear; do not add, guess or correct ingredients. If nothing is clear, return "".
+Return only JSON: {{"ingredients": "..."}}"""
+
+
+def ingredients_from_audio(audio, product_name=""):
+    prompt = INGREDIENTS_PROMPT.format(product=f" ({product_name})" if product_name else "")
+    result = gemini.generate_json("ingredients_said", model(), prompt, [audio])
+    return str(result.get("ingredients") or "").strip()

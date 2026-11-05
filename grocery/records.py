@@ -247,21 +247,28 @@ def products_needing_info():
         item = tracked.get(p["item_id"])
         if not item or p.get("packaged") == "no":
             continue
-        missing = []
         mine = [b for b in batches if b.get("product_id") == p["product_id"]]
         if not mine:
             continue  # nothing bought (or all of it deleted): nothing to fill in now
-        if not p.get("pack_size") and all(_waiting_for_pack_size(b) for b in mine):
-            missing.append("size")
+        missing = info_gaps(p, item, mine)
         resize = _to_resize(mine, _float(p.get("pack_size")), p.get("pack_unit"))
         if resize:
-            missing.append("update")  # pack size known, but some purchases still say "1"
-        if (item.get("kind") == "Food" and p.get("info_status") not in ("confirmed", "none")
-                and not p.get("ingredients")):
-            missing.append("ingredients")
+            missing.insert(-1 if "ingredients" in missing else len(missing), "update")  # size known, purchases say "1"
         if missing:
             out.append(dict(p, emoji=item.get("emoji", ""), missing=missing, item_row=item, resize=resize))
     return sorted(out, key=lambda p: p.get("created_at", ""), reverse=True)
+
+
+def info_gaps(product, item, batches):
+    """What a packaged product still lacks: "size" (only ever counted in packs, size unknown) and/or
+    "ingredients" (a food with no label info yet)."""
+    gaps = []
+    if not product.get("pack_size") and batches and all(_waiting_for_pack_size(b) for b in batches):
+        gaps.append("size")
+    if (item.get("kind") == "Food" and product.get("info_status") not in ("confirmed", "none")
+            and not product.get("ingredients")):
+        gaps.append("ingredients")
+    return gaps
 
 
 def save_product_info(product_id, info, barcode=""):
@@ -368,6 +375,24 @@ def recent_purchases(limit=20):
 
 def products():
     return sheets.read_tab("products")
+
+
+def set_item(item_id, **fields):
+    """Change how an item is kept (storage, perishable…); applies to it from now on."""
+    sheets.update_rows("items", "item_id", {item_id: fields})
+
+
+def rename_product(product_id, name, brand):
+    """Fix a product's name or brand; its purchases show the new name too."""
+    name = re.sub(r"\s+", " ", name).strip()
+    sheets.update_rows("products", "product_id", {product_id: {"name": name, "brand": brand.strip()}})
+    sheets.update_rows("batches", "batch_id", {b["batch_id"]: {"product": name} for b in sheets.read_tab("batches")
+                                               if b.get("product_id") == product_id})
+
+
+def save_ingredients(product_id, ingredients):
+    sheets.update_rows("products", "product_id", {product_id: {
+        "ingredients": ingredients, "info_status": "confirmed", "info_source": "Said by you"}})
 
 
 MERGE_FILL = ("photo_url", "barcode", "brand", "serving_size", "servings_per_pack", "ingredients", "nutrients_json",

@@ -4,7 +4,8 @@ import streamlit as st
 
 from grocery import analytics, events, records, voice
 from grocery.gemini import GeminiError
-from grocery.views import product_ui, voice_update
+from grocery.views import item_info, product_ui, voice_update
+from grocery.views.amounts import amount_text
 from grocery.views.common import back_home
 
 PLACES = [("Freezer", ":material/ac_unit:"), ("Fridge", ":material/kitchen:"), ("Open air", ":material/shelves:")]
@@ -24,6 +25,8 @@ def render():
 
     records.fill_missing_item_pictures()
     products = {p["product_id"]: p for p in records.products()}
+    live = records.live_batches()
+    st.caption("Tap an item's name to see and fix everything about it.")
     for place, icon in PLACES:
         here = [r for r in rows if (r["item"].get("storage") or "Open air") == place]
         if not here:
@@ -31,10 +34,22 @@ def render():
         here.sort(key=lambda r: ({"red": 0, "orange": 1, "ok": 2}[r["level"]], -r["days_open"]))
         st.subheader(f"{place} · {len(here)}", anchor=False)
         for r in here:
-            _row(r, products.get(r["batch"].get("product_id")))
+            product = products.get(r["batch"].get("product_id"))
+            _row(r, product, _info_badge(product, r["item"], live))
+    item_info.show_if_open()
 
 
-def _row(r, product=None):
+def _info_badge(product, item, live):
+    """✅ when a packaged product has its info, else what's missing; nothing for loose items."""
+    if not product or product.get("packaged") == "no":
+        return ""
+    gaps = records.info_gaps(product, item, [b for b in live if b.get("product_id") == product["product_id"]])
+    if not gaps:
+        return ":green-badge[✅ info]"
+    return " ".join({"size": ":orange-badge[📏 size?]", "ingredients": ":orange-badge[🧾 ingredients?]"}[g] for g in gaps)
+
+
+def _row(r, product=None, info_badge=""):
     b, item = r["batch"], r["item"]
     bid = b["batch_id"]
     color = BADGE[r["level"]]
@@ -43,8 +58,12 @@ def _row(r, product=None):
             product_ui.photo(product, item.get("emoji", ""), width=48, item=item)
             usual = f" / ~{r['expected']:.0f}d" if r["expected"] else ""
             note = f" :{color}-badge[{r['reason']}]" if r["reason"] else ""
-            st.markdown(f"**{b['item']}** :{color}-badge[{r['days_open']}d{usual}]{note}  \n"
-                        f":gray[{_amount(b.get('units'))} {b.get('unit', '')} · {b.get('store', '')}]")
+            with st.container(gap=None):
+                if st.button(f"**{b['item']}**", key=f"pi_{bid}", type="tertiary", icon=":material/info:",
+                             help="See and fix everything about it"):
+                    item_info.open_panel(bid)
+                st.markdown(f":{color}-badge[{r['days_open']}d{usual}]{note} {info_badge}  \n"
+                            f":gray[{amount_text(b.get('units'), b.get('unit'))} · {b.get('store', '')}]")
         with st.container(horizontal=True):
             if st.button("Finished", key=f"pf_{bid}", icon=":material/check:"):
                 events.apply([{"type": "finish", "batch": b}], said="Pantry: Finished", source="pantry")
@@ -86,10 +105,3 @@ def _went_bad(b):
         if st.button("Cancel", key=f"pwx_{bid}"):
             st.session_state.pop(f"pw_{bid}", None)
             st.rerun()
-
-
-def _amount(units):
-    try:
-        return f"{float(units):,g}"
-    except (TypeError, ValueError):
-        return units or ""

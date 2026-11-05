@@ -384,6 +384,16 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Insights → Products:** "Add label photo" on any product without ingredients or nutrition (e.g. matched online earlier).
   - Auto-snapping while rotating the pack: **skipped for now** (tap to snap).
 - **Look up all: tick boxes (built).** Every product it would search has a tick box (all ticked by default), plus Tick all / Untick all. The button reads "Look up ticked (17 of 19)" when some are unticked.
+- **Pantry item panel (built):** tap an item's name in Pantry to open a **side drawer** (Streamlit dialog, `position="right"`). Tapping outside or ✕ closes it; it stays open while you save things.
+  - Header: photo, product name, brand, and a completeness badge (✅ info complete / 📏 pack size? / 🧾 ingredients?). Pantry cards show the same badge.
+  - At-a-glance badges: bought date and store, price, amount (e.g. "1 lb 6 oz"), days open, expiry.
+  - **Kept in** (Freezer / Fridge / Open air) and **perishable**: saved on the item, so they apply to every future purchase.
+  - **Expiry** for this purchase (an undoable event).
+  - **One pack** size, with lb + oz or gal + fl oz boxes.
+  - **Ingredients** as chips, with small 🎤 (read them out; the AI writes the list, you confirm) and 📸 (label camera) buttons, always there so info can be replaced.
+  - **Nutrition** as a %DV bar chart, highest first: 🟢 ≤5% low, 🟠 medium, 🔴 ≥20% high (FDA rule of thumb), with a 📸 button.
+  - **Name, brand, nicknames** editing; barcode and page link.
+- **Amounts in two units (built):** anywhere a weight is typed in **lb** there's an **oz** box beside it, and **gal** gets a **fl oz** box. The small box starts at 0, so 1 lb + 6 oz = 1.375 lb. Amounts display the same way (e.g. "2 lb 5 oz").
 - **Merge duplicate products (built):** "Same as a product I have" on every product in Insights → Products, and in Needs info.
   - Pick the right product, see a preview (purchases that move, details and nicknames it brings), then tap Merge.
   - The kept product keeps its own details. Empty ones (photo, info, pack size, barcode…) are filled from the duplicate, and nicknames are combined.

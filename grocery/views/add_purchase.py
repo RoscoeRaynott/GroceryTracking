@@ -16,6 +16,7 @@ import streamlit as st
 from grocery import camera, photos, productinfo, receipts, recorder, records, sheets, timeutil, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
+from grocery.views.amounts import amount_input, amount_text
 from grocery.views.common import back_home, go
 
 STATES = {"Receipt": "ap", "Barcode": "bc", "Say it": "vc"}  # session-state namespace per mode
@@ -450,6 +451,7 @@ def _review_step(state):
     # Forget widget values the voice fix changed, so they redraw from the updated cards.
     for key in st.session_state.pop(f"{k}_pending", {}):
         st.session_state.pop(key, None)
+        st.session_state.pop(f"{key}_oz", None)  # the ounces box beside a pounds box
     st.subheader("Review")
     review["store"] = st.text_input("Store", value=review["store"], key=f"{k}_store",
                                     help="Known stores: " + (", ".join(records.stores()) or "none yet"))
@@ -466,6 +468,7 @@ def _review_step(state):
     if k == "bc":
         for key in st.session_state.pop("bc_pending", {}):
             st.session_state.pop(key, None)
+            st.session_state.pop(f"{key}_oz", None)
         _scanner(state, review)
         if not review["items"]:
             st.caption("Scan a barcode to start. Each item appears here with its usual size and price.")
@@ -619,7 +622,7 @@ def _card(c, review, known, open_by_item, open_fields):
             amount = f"{c['packs']:g} pack{'s' if c['packs'] != 1 else ''}"
             badges.insert(0, ":orange-badge[pack size?]")
         else:
-            amount = f"{c['units']:,g} {c['unit']}"
+            amount = amount_text(c["units"], c["unit"])
             if c.get("packs") is not None and c["packs"] != 1:
                 badges.insert(0, f":blue-badge[{c['packs']:g} × {c['pack_size']:,g} {c['unit']}]")
         with st.container(horizontal=True, vertical_alignment="center"):
@@ -654,8 +657,10 @@ def _card(c, review, known, open_by_item, open_fields):
                     st.caption("Pack size not known yet. Look it up later in **Needs info**; "
                                "the amount is then worked out for you.")
             else:
-                c["units"] = st.number_input(f"Quantity ({c['unit']})", value=float(c["units"]), min_value=0.0,
-                                             step=1.0, key=f"it_{uid}_units")
+                units = amount_input("Quantity", float(c["units"]), c["unit"], key=f"it_{uid}_units")
+                if units is not None and abs(units - float(c["units"])) > 1e-9:
+                    c["units"] = units
+                    st.rerun()  # the card's top line shows the new amount straight away
             c["price"] = st.number_input("Price paid, after discounts, no tax ($)",
                                          value=c["price"], min_value=0.0, step=0.01, format="%.2f",
                                          key=f"it_{uid}_price", placeholder="Enter the price")

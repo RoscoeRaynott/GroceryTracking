@@ -108,42 +108,50 @@ def merge(product, key):
             st.rerun()
 
 
-def label_photo(product, key):
-    """“Add label photo” for a product with no ingredients or nutrition yet (e.g. matched online without them)."""
-    if product.get("ingredients") or product.get("nutrients_json"):
+def label_photo(product, key, inline=False, after_save=None):
+    """“Add label photo” for a product with no ingredients or nutrition yet (e.g. matched online without them).
+    inline=True draws it in place (always offered, to replace what's saved); after_save() runs after saving."""
+    if not inline and (product.get("ingredients") or product.get("nutrients_json")):
         return
+    with (st.container(border=True) if inline else
+          st.popover("Add label photo", icon=":material/document_scanner:", key=f"{key}_pop")):
+        _label_photo_body(product, key, after_save)
+
+
+def _label_photo_body(product, key, after_save):
     pid = product["product_id"]
-    with st.popover("Add label photo", icon=":material/document_scanner:", key=f"{key}_pop"):
-        info = st.session_state.get(f"{key}_info")
-        if info:
-            for line in productinfo.summary(info):
-                st.caption(line)
-            st.write(f"Ingredients: {info['ingredients']}" if info.get("ingredients") else "No ingredients read.")
-            with st.container(horizontal=True):
-                if st.button("Save", key=f"{key}_save", type="primary"):
-                    records.save_product_info(pid, info)
-                    st.session_state.pop(f"{key}_info", None)
-                    st.toast(f"Label saved for {product['name']}")
-                    st.rerun()
-                if st.button("Discard", key=f"{key}_drop"):
-                    st.session_state.pop(f"{key}_info", None)
-                    st.rerun()
-            return
-        st.caption("Ingredients and nutrition panel, 1–3 photos, any language.")
-        snapped = camera.photo(f"{key}_cam", "Open camera to snap the label")
-        if snapped:
-            st.session_state.setdefault(f"{key}_q", []).append(snapped)
-        with st.expander("Or pick from your gallery"):
-            photos.pick_photos(f"{key}_q", "Tap to add label photos")
-        queue = st.session_state.get(f"{key}_q", [])[-3:]
-        if queue:
-            st.markdown(f":blue-badge[{len(queue)} photo{'s' if len(queue) != 1 else ''} ready]")
-            if st.button("Read the label", key=f"{key}_read", type="primary"):
-                with st.spinner("Reading the label…"):
-                    try:
-                        st.session_state[f"{key}_info"] = productinfo.read_label(
-                            sheets.get_settings()["model_labels"], [ph["data"] for ph in queue])
-                        st.session_state.pop(f"{key}_q", None)
-                    except Exception as ex:
-                        st.error(f"Couldn't read the label: {ex}")
+    info = st.session_state.get(f"{key}_info")
+    if info:
+        for line in productinfo.summary(info):
+            st.caption(line)
+        st.write(f"Ingredients: {info['ingredients']}" if info.get("ingredients") else "No ingredients read.")
+        with st.container(horizontal=True):
+            if st.button("Save", key=f"{key}_save", type="primary"):
+                records.save_product_info(pid, info)
+                st.session_state.pop(f"{key}_info", None)
+                st.toast(f"Label saved for {product['name']}")
+                if after_save:
+                    after_save()
                 st.rerun()
+            if st.button("Discard", key=f"{key}_drop"):
+                st.session_state.pop(f"{key}_info", None)
+                st.rerun()
+        return
+    st.caption("Ingredients and nutrition panel, 1–3 photos, any language.")
+    snapped = camera.photo(f"{key}_cam", "Open camera to snap the label")
+    if snapped:
+        st.session_state.setdefault(f"{key}_q", []).append(snapped)
+    with st.expander("Or pick from your gallery"):
+        photos.pick_photos(f"{key}_q", "Tap to add label photos")
+    queue = st.session_state.get(f"{key}_q", [])[-3:]
+    if queue:
+        st.markdown(f":blue-badge[{len(queue)} photo{'s' if len(queue) != 1 else ''} ready]")
+        if st.button("Read the label", key=f"{key}_read", type="primary"):
+            with st.spinner("Reading the label…"):
+                try:
+                    st.session_state[f"{key}_info"] = productinfo.read_label(
+                        sheets.get_settings()["model_labels"], [ph["data"] for ph in queue])
+                    st.session_state.pop(f"{key}_q", None)
+                except Exception as ex:
+                    st.error(f"Couldn't read the label: {ex}")
+            st.rerun()
