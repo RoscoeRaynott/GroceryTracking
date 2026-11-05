@@ -276,6 +276,8 @@ def _brand_if_missing(product_id, info):
     """A lookup's brand, only when the product has none yet (a brand you typed always stays)."""
     product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
     brand = str(info.get("brand") or "").strip()
+    if product.get("no_brand") == "yes":
+        return {}  # you said it has no brand
     return {"brand": brand} if brand and not str(product.get("brand") or "").strip() else {}
 
 
@@ -450,6 +452,14 @@ def set_pack_varies(product_id, varies):
     sheets.update_rows("products", "product_id", {product_id: {"pack_varies": "yes" if varies else ""}})
 
 
+def set_no_brand(product_id, none):
+    sheets.update_rows("products", "product_id", {product_id: {"no_brand": "yes" if none else "", **({"brand": ""} if none else {})}})
+
+
+def set_no_expiry(item_id, none):
+    sheets.update_rows("items", "item_id", {item_id: {"no_expiry": "yes" if none else ""}})
+
+
 def set_barcode(product_id, barcode):
     """A scanned barcode is a fact about the product: save it straight away (it survives an app reload)."""
     sheets.update_rows("products", "product_id", {product_id: {"barcode": barcode}})
@@ -538,12 +548,12 @@ def completeness(product, item, batch):
     photo = (product or {}).get("photo_url") if packaged else item.get("photo_url") not in ("", "none", None)
     checks = [("photo", bool(photo)), ("kept in", bool(item.get("storage")))]
     if item.get("perishable") == "yes":
-        checks.append(("expiry", bool(batch.get("expiry_date"))))
+        checks.append(("expiry", bool(batch.get("expiry_date")) or item.get("no_expiry") == "yes"))
     if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition
         checks.append(("nutrition", bool(product.get("nutrients_json")) or product.get("nutrition_status") == "none"))
     if packaged:
         no_label = product.get("info_status") == "none"
-        checks += [("brand", bool(product.get("brand"))),
+        checks += [("brand", bool(product.get("brand")) or product.get("no_brand") == "yes"),
                    ("pack size", bool(_float(product.get("pack_size"))) or product.get("pack_varies") == "yes")]
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
