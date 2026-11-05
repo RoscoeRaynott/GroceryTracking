@@ -406,6 +406,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - The item panel has every tool that was on the Needs info page: **🔎 Look it up online** (or **Redo search on <store>'s site** for chain / store-brand products), editable search words, **📷 Scan** (barcode → lookup, or a label photo), label photos, 🎤, Single ingredient, No nutrition.
 - **Food and household apart (decided):** Freezer / Fridge / Open air sections hold **food** only. Non-food items (tissues, body wash…) get their own **🧴 Household** section.
 - **Tiles (decided):** every tile is the same size (picture area fixed, so tall and wide photos line up). **Tapping anywhere on a tile, including the picture, opens the item panel.** In the panel, 🔍 next to the picture shows it enlarged.
+- **Identify, then search (built):** in the item panel, **📷 Scan** accepts a barcode **or a photo of the front / label**.
+  - The barcode (free database, then Google) or the photo (read in any language) gives the **exact name and brand**, e.g. "Shan Chicken White Karahi Masala". The app then **automatically searches the web with that exact name** for the photo, pack size, ingredients and nutrition, and shows one preview.
+  - The preview shows **name / brand changes** ("Shan masala → Shan Chicken White Karahi Masala") with **Use the found name / brand** (ticked). Purchases take the new name. **Yes, use it** works whenever anything would change.
+  - What the photo read (ingredients, nutrition) **wins** over the web and replaces earlier label info, marked "(from your photo)". Everything else still only fills empty fields. The barcode is kept.
 - **Consistency rules (decided, after a full check):**
   - Every edit box that shows *saved* data (item panel chips, pack, bought, expiry, search words, Insights' Kept in) is tied to the saved value, so it always starts from what's stored, even after a lookup, voice or another screen changed it.
   - Items counted in "each": the pack editor only asks **Items in one pack** (one item = 1 each), so Save always appears.

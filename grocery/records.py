@@ -409,14 +409,19 @@ def save_ingredients(product_id, ingredients, source="Said by you"):
         "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
 
 
-def fill_from_lookup(product_id, info, use_photo=True, use_pack=False):
-    """A redo search on the store's site: fill only what's still empty (and the photo, if you want it).
-    Returns the names of the fields that were filled."""
+LABEL_COLS = ("serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv")
+
+
+def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=None, new_brand=None):
+    """Save a lookup / scan match: fill only what's still empty (and the photo, if you want it). What a photo of
+    the label read replaces earlier label info, since the label always wins. new_name / new_brand: the exact
+    name and brand it identified, when you chose to use them. Returns the names of the fields that changed."""
     product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
     cols = productinfo.product_columns(info)
+    from_photo = info.get("from_photo") or (list(LABEL_COLS) if info.get("source") == "Label photo" else [])
     change = {k: v for k, v in cols.items()
               if k not in ("info_status", "info_source", "info_url", "photo_url", "pack_size", "pack_unit", "pack_count")
-              and v not in ("", None) and not product.get(k)}
+              and v not in ("", None) and (not product.get(k) or k in from_photo)}
     if info.get("photo_url") and (use_photo or not product.get("photo_url")):
         change["photo_url"] = info["photo_url"]
     if info.get("barcode") and not product.get("barcode"):
@@ -428,6 +433,10 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False):
         change["info_url"] = info["url"]
     sheets.update_rows("products", "product_id", {product_id: change})
     filled = [k for k in change if k not in ("info_status", "info_source")]
+    if new_name or new_brand:
+        rename_product(product_id, new_name or product.get("name", ""),
+                       new_brand if new_brand is not None else product.get("brand", ""))
+        filled.append("name")
     if info.get("pack_units") and (use_pack or not _float(product.get("pack_size"))):
         apply_pack_size(product_id, info["pack_units"], info.get("pack_unit") or "each", count=info.get("pack_count"),
                         recount=use_pack)
