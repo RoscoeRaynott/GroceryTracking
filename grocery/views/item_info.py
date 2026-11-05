@@ -470,6 +470,10 @@ def _nutrition(product):
                 x="dv:Q", text=alt.Text("dv:Q", format=".0f"))
             st.altair_chart((bars + labels).properties(height=30 * len(rows)), width="stretch")
             st.caption("🟢 low (5% or less) · 🟠 medium · 🔴 high (20% or more)")
+            if str(product.get("info_source", "")).startswith("USDA"):
+                piece = records._float(product.get("piece_grams"))
+                st.caption(f"📚 Typical values from USDA ({product['info_source'].split(': ', 1)[-1]}), per 100 g"
+                           + (f" · 1 piece ≈ {piece:g} g" if piece else ""))
         elif product.get("info_status") == "none" or product.get("nutrition_status") == "none":
             st.caption("No nutrition to track.")
         else:
@@ -478,6 +482,65 @@ def _nutrition(product):
                          help="You've checked: there's no nutrition label worth tracking for this"):
                 records.mark_no_nutrition(pid)
                 st.toast("Marked: no nutrition")
+                _refresh()
+        # Loose food (or food already on typical values): typical nutrition from USDA, with a match you can change.
+        if product.get("packaged") == "no" or not rows or str(product.get("info_source", "")).startswith("USDA"):
+            _typical(product)
+
+
+def _typical(product):
+    from grocery import usda
+    pid = product["product_id"]
+    if not usda.api_key():
+        return
+    item = next((i for i in records.items() if i["item_id"] == product.get("item_id")), {})
+    key = f"ii_usda_{pid}"
+    options = st.session_state.get(key)
+    if options is None:
+        label = "📚 Change typical match" if str(product.get("info_source", "")).startswith("USDA") else "📚 Typical nutrition (USDA)"
+        if st.button(label, key=f"{key}_go", type="tertiary",
+                     help="Typical values for fruit, vegetables, meat and fish, from the USDA food database"):
+            with st.spinner("Asking USDA…"):
+                try:
+                    st.session_state[key] = usda.matches(item.get("name") or product["name"])
+                except Exception as ex:
+                    st.session_state[key] = []
+                    st.error(f"USDA: {ex}")
+            _refresh()
+        return
+    with st.container(border=True):
+        if not options:
+            st.warning("No USDA match found.")
+            if st.button("OK", key=f"{key}_ok"):
+                st.session_state.pop(key, None)
+                _refresh()
+            return
+        pick = st.selectbox("USDA match", options, format_func=lambda m: m["name"], key=f"{key}_pick")
+        n = pick["nutrients"]
+        st.markdown("Per 100 g: " + " ".join(
+            f":gray-badge[{k.replace('_', ' ')} {v['amount']:g}{productinfo.NUTRIENT_UNITS.get(k, '') if k != 'calories' else ' kcal'}]"
+            for k, v in n.items() if k in ("calories", "potassium", "sodium", "protein", "dietary_fiber", "total_sugars")))
+        grams, portion = None, ""
+        if item.get("unit") == "each":  # counted in pieces: how much does one weigh?
+            gkey = f"{key}_g_{pick['fdc_id']}"
+            if gkey not in st.session_state:
+                try:
+                    st.session_state[gkey] = usda.piece_grams(pick["fdc_id"])
+                except Exception:
+                    st.session_state[gkey] = (None, "")
+            grams, portion = st.session_state[gkey]
+            grams = st.number_input("1 piece weighs (g)", value=grams, min_value=0.0, step=5.0, format="%g",
+                                    key=f"{key}_grams_{pick['fdc_id']}", help=f"USDA: {portion}" if portion else None)
+        with st.container(horizontal=True):
+            if st.button("Use it", key=f"{key}_yes", type="primary"):
+                if records.save_typical(pid, item.get("name") or product["name"], pick, grams, portion):
+                    st.toast(f"📚 Typical nutrition: {pick['name']}")
+                else:
+                    st.warning("This product already has nutrition from its label, so it was kept.")
+                st.session_state.pop(key, None)
+                _refresh()
+            if st.button("Cancel", key=f"{key}_no"):
+                st.session_state.pop(key, None)
                 _refresh()
 
 
