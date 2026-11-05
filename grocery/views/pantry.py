@@ -2,10 +2,8 @@
 
 import streamlit as st
 
-from grocery import analytics, events, records, voice
-from grocery.gemini import GeminiError
+from grocery import analytics, records
 from grocery.views import item_info, product_ui, voice_update
-from grocery.views.amounts import amount_text
 from grocery.views.common import back_home
 
 PLACES = [("Freezer", ":material/ac_unit:"), ("Fridge", ":material/kitchen:"), ("Open air", ":material/shelves:")]
@@ -15,8 +13,8 @@ BADGE = {"red": "red", "orange": "orange", "ok": "green"}
 def render():
     back_home()
     st.title("Pantry")
-    with st.container(border=True):
-        st.markdown("**Remember something?** :gray[e.g. three eggs broke · the broccoli went bad · butter finished]")
+    busy = bool(st.session_state.get("pv"))  # a heard update waiting for approval keeps it open
+    with st.expander("🎤 Remember something? :gray[three eggs broke · butter finished…]", expanded=bool(busy)):
         voice_update.panel("pv", "Tap and say what went bad or finished")
     rows = analytics.pantry()
     if not rows:
@@ -25,72 +23,40 @@ def render():
 
     records.fill_missing_item_pictures()
     products = {p["product_id"]: p for p in records.products()}
-    st.caption("Tap an item's name to see and fix everything about it. The bar shows how much is known about it.")
+    st.caption("Tap a name to see everything about it, mark it finished, or say some went bad.")
+    st.markdown(TILE_CSS, unsafe_allow_html=True)
     for place, icon in PLACES:
         here = [r for r in rows if (r["item"].get("storage") or "Open air") == place]
         if not here:
             continue
         here.sort(key=lambda r: ({"red": 0, "orange": 1, "ok": 2}[r["level"]], -r["days_open"]))
         st.subheader(f"{place} · {len(here)}", anchor=False)
-        for r in here:
-            product = products.get(r["batch"].get("product_id"))
-            _row(r, product, item_info.profile_bar(records.completeness(product, r["item"], r["batch"])))
+        with st.container(horizontal=True, gap="small", key=f"grid_{place.replace(' ', '_')}"):
+            for r in here:
+                product = products.get(r["batch"].get("product_id"))
+                _tile(r, product, records.completeness(product, r["item"], r["batch"]))
     item_info.show_if_open()
 
 
-def _row(r, product=None, profile=""):
+TILE_CSS = """<style>
+[class*="st-key-tile_"] { padding: 6px 4px 10px; }
+[class*="st-key-tile_"] [data-testid="stMarkdownContainer"] { text-align: center; }
+[class*="st-key-tile_"] [data-testid="stImage"] { margin: 0 auto; }
+[class*="st-key-tile_"] button p { font-size: 13px; font-weight: 600; line-height: 1.15; }
+[class*="st-key-tile_"] [data-testid="stMarkdownContainer"] p { font-size: 12px; line-height: 1.3; margin: 0; }
+[class*="st-key-tile_"] > [data-testid="stElementContainer"]:last-child { min-height: 24px; }
+</style>"""
+
+
+def _tile(r, product, checks):
+    """One square per purchase: photo, name (tap to open), days badge, and a thin how-complete bar."""
     b, item = r["batch"], r["item"]
     bid = b["batch_id"]
     color = BADGE[r["level"]]
-    with st.container(border=True):
-        with st.container(horizontal=True, vertical_alignment="center"):
-            product_ui.photo(product, item.get("emoji", ""), width=48, item=item)
-            usual = f" / ~{r['expected']:.0f}d" if r["expected"] else ""
-            note = f" :{color}-badge[{r['reason']}]" if r["reason"] else ""
-            with st.container(gap=None):
-                if st.button(f"**{b['item']}**", key=f"pi_{bid}", type="tertiary", icon=":material/info:",
-                             help="See and fix everything about it"):
-                    item_info.open_panel(bid)
-                st.markdown(f":{color}-badge[{r['days_open']}d{usual}]{note}  \n"
-                            f":gray[{amount_text(b.get('units'), b.get('unit'))} · {b.get('store', '')}]  \n{profile}")
-        with st.container(horizontal=True):
-            if st.button("Finished", key=f"pf_{bid}", icon=":material/check:"):
-                events.apply([{"type": "finish", "batch": b}], said="Pantry: Finished", source="pantry")
-                st.toast(f"{b['item']} finished · Undo in History")
-                st.rerun()
-            with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
-                _went_bad(b)
-
-
-def _went_bad(b):
-    bid = b["batch_id"]
-    parsed = st.session_state.get(f"pw_{bid}")
-    if parsed is None:
-        text = st.text_input("What went bad?", key=f"pwt_{bid}",
-                             placeholder="e.g. half · 200 grams · one bell pepper · 2 slices, rest is fine")
-        if st.button("Check", key=f"pwc_{bid}", type="primary", disabled=not text.strip()):
-            with st.spinner("Reading…"):
-                try:
-                    st.session_state[f"pw_{bid}"] = dict(voice.parse_waste(b, text), text=text)
-                except GeminiError as ex:
-                    st.error(f"Couldn't read that: {ex}")
-                    return
-            st.rerun()
-        return
-
-    share = events.fraction_text(float(parsed.get("fraction") or 0))
-    done = parsed.get("batch_done", True)
-    st.markdown(f":orange-badge[{share} wasted] "
-                + (":gray-badge[rest eaten · closes]" if done else ":green-badge[rest still left]"))
-    st.caption(parsed.get("summary", ""))
-    with st.container(horizontal=True):
-        if st.button("Approve", key=f"pwa_{bid}", type="primary"):
-            events.apply([{"type": "waste", "batch": b, "fraction": parsed.get("fraction"),
-                           "batch_done": done, "happened_on": parsed.get("happened_on")}],
-                         said=f"Pantry: {parsed['text']}", source="pantry")
-            st.session_state.pop(f"pw_{bid}", None)
-            st.toast(f"Saved · Undo in History")
-            st.rerun()
-        if st.button("Cancel", key=f"pwx_{bid}"):
-            st.session_state.pop(f"pw_{bid}", None)
-            st.rerun()
+    with st.container(border=True, width=112, gap=None, horizontal_alignment="center", key=f"tile_{bid}"):
+        product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
+        name = b["item"] if len(b["item"]) <= 22 else b["item"][:20] + "…"
+        if st.button(name, key=f"pi_{bid}", type="tertiary", help=b.get("product") or b["item"]):
+            item_info.open_panel(bid)
+        warn = "⚠️ " if r["level"] == "red" else ""
+        st.markdown(f":{color}-badge[{warn}{r['days_open']}d] {item_info.profile_bar(checks, compact=True)}")

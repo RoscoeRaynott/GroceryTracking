@@ -395,6 +395,7 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Insights → Products:** "Add label photo" on any product without ingredients or nutrition (e.g. matched online earlier).
   - Auto-snapping while rotating the pack: **skipped for now** (tap to snap).
 - **Look up all: tick boxes (built).** Every product it would search has a tick box (all ticked by default), plus Tick all / Untick all. The button reads "Look up ticked (17 of 19)" when some are unticked.
+- **Pantry is a photo grid (decided, option A):** three tiles per row on a phone. Each tile has the photo (or emoji), a short name (tap to open the item panel), a colored days badge (⚠️ when flagged) and a 5-segment completion bar. **Finished** and **Some went bad** live in the item panel (top), along with why it's flagged. The "Remember something?" voice box is a one-line expander, open while an update waits for approval. Freezer / Fridge / Open air groups stay.
 - **Pantry item panel (built):** tap an item's name in Pantry to open a **side drawer** (Streamlit dialog, `position="right"`). Tapping outside or ✕ closes it; it stays open while you save things.
   - Header: photo, product name, brand, and a completeness badge (✅ info complete / 📏 pack size? / 🧾 ingredients?). Pantry cards show the same badge.
   - At-a-glance badges: bought date and store, price, amount (e.g. "1 lb 6 oz"), days open, expiry.

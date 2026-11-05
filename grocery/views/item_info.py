@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from grocery import events, productinfo, recorder, records, sheets, voice
+from grocery import analytics, events, productinfo, recorder, records, sheets, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views import product_ui
@@ -19,13 +19,17 @@ OPEN = "pantry_open"
 PLACE_ICONS = {"Freezer": "🧊", "Fridge": "❄️", "Open air": "🧺"}
 
 
-def profile_bar(checks):
-    """Like a website's profile completion: ▰▰▰▰▰▰▱▱▱▱ 60%, red under 40%, orange under 80%, else green."""
+def profile_bar(checks, compact=False):
+    """Like a website's profile completion: ▰▰▰▰▰▰▱▱▱▱ 60%, red under 40%, orange under 80%, else green.
+    compact: five segments and no number, for the Pantry tiles."""
     if not checks:
         return ""
     pct = round(100 * sum(1 for _, ok in checks if ok) / len(checks))
-    filled = round(pct / 10)
     color = "red" if pct < 40 else "orange" if pct < 80 else "green"
+    if compact:
+        filled = round(pct / 20)
+        return f":{color}[{'▰' * filled}{'▱' * (5 - filled)}]"
+    filled = round(pct / 10)
     return f":{color}[{'▰' * filled}{'▱' * (10 - filled)} **{pct}%**]"
 
 
@@ -67,6 +71,7 @@ def _panel(bid):
         st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}")
         if product:
             _edit_names(product)
+    _quick_actions(batch)
     checks = records.completeness(product, item, batch)
     st.markdown(profile_bar(checks) + "  \n" + " ".join(
         f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
@@ -172,6 +177,56 @@ def _redo_search(product, item):
             if st.button("Not this", key=f"{key}_no"):
                 st.session_state.pop(key, None)
                 _refresh()
+
+
+def _quick_actions(batch):
+    """Finished / Some went bad (they used to sit on each Pantry card), plus why it's flagged, if it is."""
+    bid = batch["batch_id"]
+    row = next((r for r in analytics.pantry() if r["batch"]["batch_id"] == bid), None)
+    if row and row["reason"]:
+        st.markdown(f":{'red' if row['level'] == 'red' else 'orange'}-badge[⚠️ {row['reason']}]")
+    with st.container(horizontal=True):
+        if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
+            events.apply([{"type": "finish", "batch": batch}], said="Pantry: Finished", source="pantry")
+            st.toast(f"{batch['item']} finished · Undo in History")
+            _close()
+            st.rerun()  # the item leaves the Pantry, so close the panel and redraw the page
+        with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
+            _went_bad(batch)
+
+
+def _went_bad(b):
+    bid = b["batch_id"]
+    parsed = st.session_state.get(f"pw_{bid}")
+    if parsed is None:
+        text = st.text_input("What went bad?", key=f"pwt_{bid}",
+                             placeholder="e.g. half · 200 grams · one bell pepper · 2 slices, rest is fine")
+        if st.button("Check", key=f"pwc_{bid}", type="primary", disabled=not text.strip()):
+            with st.spinner("Reading…"):
+                try:
+                    st.session_state[f"pw_{bid}"] = dict(voice.parse_waste(b, text), text=text)
+                except GeminiError as ex:
+                    st.error(f"Couldn't read that: {ex}")
+                    return
+            _refresh()
+        return
+
+    share = events.fraction_text(float(parsed.get("fraction") or 0))
+    done = parsed.get("batch_done", True)
+    st.markdown(f":orange-badge[{share} wasted] "
+                + (":gray-badge[rest eaten · closes]" if done else ":green-badge[rest still left]"))
+    st.caption(parsed.get("summary", ""))
+    with st.container(horizontal=True):
+        if st.button("Approve", key=f"pwa_{bid}", type="primary"):
+            events.apply([{"type": "waste", "batch": b, "fraction": parsed.get("fraction"),
+                           "batch_done": done, "happened_on": parsed.get("happened_on")}],
+                         said=f"Pantry: {parsed['text']}", source="pantry")
+            st.session_state.pop(f"pw_{bid}", None)
+            st.toast(f"Saved · Undo in History")
+            _refresh()
+        if st.button("Cancel", key=f"pwx_{bid}"):
+            st.session_state.pop(f"pw_{bid}", None)
+            _refresh()
 
 
 def _days_open(batch):
