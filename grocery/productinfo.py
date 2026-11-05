@@ -518,3 +518,16 @@ def identify_then_search(model, found, unit="each", store=""):
     if from_label:
         merged["name"] = name  # printed on the pack in your hand
     return merged
+
+
+def best_lookup(model, label_model, query, unit="each", store="", barcode="", photos=()):
+    """The best lookup for what we have: photos of the pack (read, then search with the exact name), else its
+    barcode (identify, then search with the exact name), else its name."""
+    if photos:
+        found = read_label(label_model, list(photos))
+        if barcode and not found.get("barcode"):
+            found["barcode"] = barcode
+        return identify_then_search(model, found, unit, store)
+    if barcode:
+        return identify_then_search(model, by_barcode(model, barcode, query, unit, store), unit, store)
+    return web_lookup(model, query, unit, store=store)
