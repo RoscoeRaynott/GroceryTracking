@@ -395,6 +395,30 @@ def save_ingredients(product_id, ingredients, source="Said by you"):
         "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
 
 
+def fill_from_lookup(product_id, info, use_photo=True):
+    """A redo search on the store's site: fill only what's still empty (and the photo, if you want it).
+    Returns the names of the fields that were filled."""
+    product = next((p for p in sheets.read_tab("products") if p["product_id"] == product_id), {})
+    cols = productinfo.product_columns(info)
+    change = {k: v for k, v in cols.items()
+              if k not in ("info_status", "info_source", "info_url", "photo_url", "pack_size", "pack_unit", "pack_count")
+              and v not in ("", None) and not product.get(k)}
+    if info.get("photo_url") and (use_photo or not product.get("photo_url")):
+        change["photo_url"] = info["photo_url"]
+    if info.get("barcode") and not product.get("barcode"):
+        change["barcode"] = info["barcode"]
+    if change.get("ingredients") or change.get("nutrients_json"):
+        change.update(info_status="confirmed", info_source=info.get("source", "Web search"), info_url=info.get("url", ""))
+    elif info.get("url") and not product.get("info_url"):
+        change["info_url"] = info["url"]
+    sheets.update_rows("products", "product_id", {product_id: change})
+    filled = [k for k in change if k not in ("info_status", "info_source")]
+    if info.get("pack_units") and not _float(product.get("pack_size")):
+        apply_pack_size(product_id, info["pack_units"], info.get("pack_unit") or "each", count=info.get("pack_count"))
+        filled.append("pack size")
+    return filled
+
+
 def mark_no_nutrition(product_id):
     """You checked: no nutrition label worth tracking (e.g. a spice). Counts as done."""
     sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": "none"}})
