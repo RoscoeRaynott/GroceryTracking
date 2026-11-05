@@ -393,6 +393,12 @@ _Status: gathering requirements. No code until the plan is approved._
   - **Ingredients** as chips, with small 🎤 (read them out; the AI writes the list, you confirm) and 📸 (label camera) buttons, always there so info can be replaced.
   - **Nutrition** as a %DV bar chart, highest first: 🟢 ≤5% low, 🟠 medium, 🔴 ≥20% high (FDA rule of thumb), with a 📸 button.
   - **Name, brand, nicknames** editing; barcode and page link.
+- **Profile completion bar (built):** every Pantry card and the item panel show a bar like a website's profile completion, e.g. ▰▰▰▰▰▱▱▱▱▱ 50%: red under 40%, orange under 80%, green from 80%. The panel lists each field as a chip, green ✓ when known and gray when missing.
+  - **Packaged products:** photo, kept in, brand, pack size, ingredients, nutrition, barcode, **at least one nickname** (so voice understands it next time), plus expiry for perishables.
+  - **Loose items:** photo, kept in, plus expiry for perishables.
+  - **🌿 Single ingredient** (next to Ingredients when missing): saves the product itself as the only ingredient (e.g. "Turmeric powder") and counts as done.
+  - **🚫 No nutrition** (next to Nutrition when missing): you confirm there's nothing worth tracking; it counts as done (products column `nutrition_status` = "none").
+- **Panel actions refresh only the panel** (e.g. adding a nickname), so open sections stay open.
 - **Amounts in two units (built):** anywhere a weight is typed in **lb** there's an **oz** box beside it, and **gal** gets a **fl oz** box. The small box starts at 0, so 1 lb + 6 oz = 1.375 lb. Amounts display the same way (e.g. "2 lb 5 oz").
 - **Merge duplicate products (built):** "Same as a product I have" on every product in Insights → Products, and in Needs info.
   - Pick the right product, see a preview (purchases that move, details and nicknames it brings), then tap Merge.
