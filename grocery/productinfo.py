@@ -431,6 +431,11 @@ LAB_PROMPTS = {
 {{"found": true/false, "serving_size": short, e.g. "3/4 cup (170g)", "servings_per_pack": number or null,
   "nutrients": {{nutrient: {{"amount": number, "dv": number or null}}}} using only these keys and units, per serving:
   {nutrients}, "reason": one sentence}}""",
+    "ingredient_items": """Find what this grocery product is made of. What we know: {query}
+{store_rule}Use a few short searches. Do NOT copy the printed ingredients sentence. Instead list each
+ingredient separately as a short lowercase name in its own array item, in the same order
+(e.g. ["chicken wings", "salt", "garlic", "butter"]). Return only JSON:
+{{"found": true/false, "ingredient_items": [ ... ], "reason": one sentence}}""",
     "ingredients": """Find the ingredients list for this grocery product. What we know: {query}
 {store_rule}Use a few short searches. Return only JSON:
 {{"found": true/false, "ingredients": the ingredients as one comma-separated list, or "",
@@ -439,7 +444,8 @@ LAB_PROMPTS = {
 
 
 def lab_lookup(model, part, query, unit="each", store=""):
-    """One focused trial search: part = "product" | "nutrition" | "ingredients". Returns (reply, sources)."""
+    """One focused trial search: part = "product" | "nutrition" | "ingredients" | "ingredient_items".
+    Returns (reply, sources)."""
     store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
                   else GENERAL_RULE)
     prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST)

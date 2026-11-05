@@ -13,7 +13,8 @@ from grocery.views.common import back_home, go
 
 PARTS = [("product", "🏷 Product only", "name, brand, photo, pack size, link"),
          ("nutrition", "📊 Nutrition only", "serving and nutrients (numbers)"),
-         ("ingredients", "🧾 Ingredients only", "the ingredients list")]
+         ("ingredients", "🧾 Ingredients only", "the ingredients list"),
+         ("ingredient_items", "🧩 Ingredients as separate items", "each ingredient as its own short word")]
 
 
 def render():
@@ -83,6 +84,9 @@ def _show(part, res):
         n = r.get("nutrients") or {}
         st.markdown(" ".join(f":gray-badge[{k.replace('_', ' ')} {v.get('amount')}]" for k, v in n.items()
                              if isinstance(v, dict)) or ":gray[no nutrients]")
+    elif part == "ingredient_items":
+        items = [str(x) for x in (r.get("ingredient_items") or []) if str(x).strip()]
+        st.markdown(" ".join(f":gray-badge[{x[:40]}]" for x in items) or "No ingredients.")
     else:
         st.write(r.get("ingredients") or "No ingredients.")
     if r.get("reason"):
