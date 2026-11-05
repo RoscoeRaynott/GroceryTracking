@@ -450,7 +450,6 @@ def completeness(product, item, batch):
             ("pack size", bool(_float(product.get("pack_size")))),
             ("ingredients", bool(product.get("ingredients")) or no_label),
             ("nutrition", bool(product.get("nutrients_json")) or no_label or product.get("nutrition_status") == "none"),
-            ("nickname", bool(nicknames(product))),
         ]
     return checks
 
