@@ -80,9 +80,7 @@ Goal 1, the one that matters most: FIND THE PRODUCT.
 - Use a few SHORT searches (brand + product, e.g. "Radhuni turmeric powder"), not one long search.
 - Search anywhere: the maker's own site, Amazon, Walmart, and South Asian / East Asian / international
   grocery sites. Many imported products (Indian, Bangladeshi, Asian brands) are not sold by big US chains.
-- A store name is given only for big chains (Costco, Walmart…); then check that store's site
-  (costco.com and costcobusinessdelivery.com are the same products).
-- If the brand makes only one version of this product (one turmeric powder, one garam masala), that
+{store_rule}- If the brand makes only one version of this product (one turmeric powder, one garam masala), that
   IS the product, even if the size differs from what we know; report the size you found.
 - The user's words may be informal or regional (e.g. in South Asian usage "mutton" usually means goat).
 Goal 2, a bonus: its ingredients list and Nutrition Facts, from that product's page or the maker's page.
@@ -96,12 +94,26 @@ Return only JSON, no other text:
   "has_label_info": true only if you found its ingredients or Nutrition Facts,
   "pack_text": the pack size exactly as the page lists it (e.g. "18 count", "200 g", "2 x 1 gal"), or "",
   "size_note": if the size you found differs from what we know, say so briefly (e.g. "found 400 g; you had 200 g"), else "",
-  "pack_in_unit": how many {unit} are in ONE pack as sold, ALWAYS converting to {unit} (12 oz = 0.75 lb;
-                  "2 x 1 gal" = 2 gal; "6 x 16 fl oz" = 2839 ml; "32 fl oz" = 946 ml), or null only
-                  if it truly can't be expressed in {unit},
+  "pack_count": how many separate units are in ONE pack as sold (a 2-pack of tubs = 2, 6 x 1 gal = 6,
+                a single item = 1),
+  "each_in_unit": how many {unit} are in ONE of those units, converting to {unit} (12 oz = 0.75 lb;
+                  "32 oz" tub = 2 lb; "16 fl oz" = 473 ml; 1 gal jug = 1 gal), or null if it can't be expressed in {unit},
+  "pack_in_unit": pack_count x each_in_unit = how many {unit} are in ONE whole pack as sold, or null,
   "reason": one sentence on what you found or why not,
   "info": {shape}
 }}"""
+
+STORE_RULE = """- This product is sold by {store}. FIRST find it on {store}'s own website ({sites}) and take the
+  name and the pack exactly as {store} sells it (e.g. a 2-pack of 32 oz tubs, a case of 6 x 1 gal).
+  Use other sites only if {store}'s own page can't be found, and then say so in "reason".
+"""
+STORE_SITES = {"Costco": "costco.com, costcobusinessdelivery.com", "Sam's Club": "samsclub.com",
+               "Walmart": "walmart.com", "Target": "target.com", "Kroger": "kroger.com", "Safeway": "safeway.com",
+               "Albertsons": "albertsons.com", "Randalls": "randalls.com", "H-E-B": "heb.com",
+               "Whole Foods": "wholefoodsmarket.com", "Trader Joe's": "traderjoes.com", "Aldi": "aldi.us",
+               "Sprouts": "sprouts.com", "Central Market": "centralmarket.com", "Fiesta": "fiestamart.com"}
+GENERAL_RULE = """- Imported or non-chain products: search anywhere (maker, Amazon, international grocery sites).
+"""
 
 BARCODE_RULE = """Its barcode (UPC/EAN) is {barcode}. Search for this number first: shopping sites often list
 imported products by barcode. Only report a product whose listing matches this barcode or clearly is it."""
@@ -195,19 +207,22 @@ def _from_off(p, url):
 
 # ---------------------------------------------------------------- Gemini
 
-def by_barcode(model, barcode, query="", unit="each"):
+def by_barcode(model, barcode, query="", unit="each", store=""):
     """Open Food Facts first (free); if it doesn't know the barcode, search Google for the number."""
     try:
         return off_by_barcode(barcode)
     except NotFound:
-        return web_lookup(model, query, unit, barcode=barcode)
+        return web_lookup(model, query, unit, barcode=barcode, store=store)
 
 
-def web_lookup(model, query, unit="each", barcode=""):
+def web_lookup(model, query, unit="each", barcode="", store=""):
     """query = short search text (brand, product, real size, big-chain store).
     unit = the item's standard unit, so the pack size comes back in it.
     barcode = digits to search for first (used when Open Food Facts doesn't know the barcode)."""
+    store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
+                  else GENERAL_RULE)
     prompt = SEARCH_PROMPT.format(query=query or f"barcode {barcode}", shape=INFO_SHAPE, unit=unit,
+                                  store_rule=store_rule,
                                   barcode_rule=BARCODE_RULE.format(barcode=barcode) if barcode else "")
     result, sources = gemini.search_json("product_web_lookup", model, prompt)
     if not result.get("product_found"):
@@ -222,8 +237,10 @@ def web_lookup(model, query, unit="each", barcode=""):
     info["size_note"] = result.get("size_note") or ""
     if barcode:
         info["barcode"] = barcode
-    pack = _num(result.get("pack_in_unit"))
+    count, each = _num(result.get("pack_count")), _num(result.get("each_in_unit"))
+    pack = _num(result.get("pack_in_unit")) or (count * each if count and each else None)
     info["pack_units"] = pack if pack and pack > 0 else None
+    info["pack_count"] = count if count and count >= 1 else None
     info["pack_unit"] = unit
     return info
 
@@ -286,6 +303,7 @@ def product_columns(info):
         del cols["photo_url"]
     if info.get("pack_units"):
         cols["pack_size"], cols["pack_unit"] = info["pack_units"], info.get("pack_unit", "")
+        cols["pack_count"] = info.get("pack_count") or ""
     return cols
 
 

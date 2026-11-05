@@ -197,7 +197,8 @@ def _add_barcode(review, code):
         info = None
         with st.spinner("Looking it up (searches Google if the free database doesn't know it)…"):
             try:
-                info = productinfo.by_barcode(sheets.get_settings()["model_lookup"], code)
+                info = productinfo.by_barcode(sheets.get_settings()["model_lookup"], code,
+                                              store=records.big_chain(review.get("store")) or "")
                 # The item's unit isn't known yet, so a pack size from the web is set later in Needs info.
                 info.pop("pack_units", None)
             except Exception:

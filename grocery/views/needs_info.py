@@ -8,7 +8,7 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ct
 from grocery import camera, photos, productinfo, records, sheets
 from grocery.gemini import GeminiError
 from grocery.views import product_ui
-from grocery.views.amounts import amount_input
+from grocery.views.amounts import pack_input
 from grocery.views.common import back_home
 
 
@@ -74,12 +74,13 @@ def _look_up_all(todo):
         return
     model = sheets.get_settings()["model_lookup"]
     jobs = {p["product_id"]: (st.session_state.get(f"ni_q_{p['product_id']}") or records.product_search_text(p),
-                              records.item_unit(p["item_id"])) for p in todo}
+                              records.item_unit(p["item_id"]), records.lookup_store(p)) for p in todo}
     bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} searched")
     ctx = get_script_run_ctx()
     found = missed = 0
     with ThreadPoolExecutor(max_workers=MAX_AT_ONCE, initializer=lambda: add_script_run_ctx(ctx=ctx)) as pool:
-        running = {pool.submit(productinfo.web_lookup, model, query, unit): pid for pid, (query, unit) in jobs.items()}
+        running = {pool.submit(productinfo.web_lookup, model, query, unit, store=store): pid
+                   for pid, (query, unit, store) in jobs.items()}
         for n, job in enumerate(as_completed(running), start=1):
             pid = running[job]
             st.session_state.pop(f"ni_miss_{pid}", None)
@@ -121,7 +122,7 @@ def _fill(p):
                  width="stretch"):
         query = st.session_state.get(f"ni_q_{pid}") or records.product_search_text(p)
         _lookup(pid, lambda: productinfo.web_lookup(sheets.get_settings()["model_lookup"], query,
-                                                    records.item_unit(p["item_id"])))
+                                                    records.item_unit(p["item_id"]), store=records.lookup_store(p)))
 
     tab_web, tab_scan = st.tabs(["Edit search", "Scan it"])
     with tab_scan:
@@ -147,7 +148,7 @@ def _fill(p):
             _lookup(pid, lambda: productinfo.by_barcode(
                 sheets.get_settings()["model_lookup"], code,
                 st.session_state.get(f"ni_q_{pid}") or records.product_search_text(p),
-                records.item_unit(p["item_id"])), barcode=code)
+                records.item_unit(p["item_id"]), records.lookup_store(p)), barcode=code)
         label = _label_queue(pid)
         if label:
             if not p.get("photo_url"):
@@ -251,7 +252,9 @@ def _pack_field(p, info):
     known = records._float(info.get("pack_units")) or records._float(p.get("pack_size"))
     if not known and "size" not in p["missing"]:
         return
-    size = amount_input("1 pack", known, unit, key=f"ni_pack_{pid}", placeholder=f"Type the {unit} in one pack")
+    count = info.get("pack_count") or records._float(p.get("pack_count"))
+    size, count = pack_input(known, count, unit, key=f"ni_pack_{pid}")
+    info["pack_count"] = count
     if not info.get("pack_units") and info.get("pack_text"):
         st.caption(f"The page says “{info['pack_text']}”, but no {unit} amount came back. Type it above.")
     info["pack_units"], info["pack_unit"] = (size or None), unit
@@ -274,6 +277,8 @@ def _confirm(p, info):
         st.caption(info["reason"])
     if info.get("pack_text"):
         size = f" = {info['pack_units']:g} {info['pack_unit']}" if info.get("pack_units") else ""
+        if info.get("pack_count") and info["pack_count"] > 1 and info.get("pack_units"):
+            size += f" ({info['pack_count']:g} × {info['pack_units'] / info['pack_count']:g} {info['pack_unit']})"
         st.markdown(f":blue-badge[pack: {info['pack_text']}{size}]")
     if info.get("size_note"):
         st.markdown(f":orange-badge[{info['size_note']}]")
@@ -320,6 +325,7 @@ def _confirm(p, info):
 def _apply_pack(pid, info):
     """A pack size fixes this product's purchases that were counted in packs or saved as just "1"."""
     if info.get("pack_units"):
-        fixed = records.apply_pack_size(pid, info["pack_units"], info.get("pack_unit") or "each")
+        fixed = records.apply_pack_size(pid, info["pack_units"], info.get("pack_unit") or "each",
+                                        count=info.get("pack_count"))
         if fixed:
             st.toast(f"Pack size {info['pack_units']:g} {info.get('pack_unit')} applied to {len(fixed)} purchase(s)")
