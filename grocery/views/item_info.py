@@ -237,31 +237,37 @@ def _lookup(fetch):
 
 
 def _bought(batch, product):
-    """🛒 How much this purchase was: packs bought × the store's pack, or just the amount. Fixable anytime."""
+    """🛒 What you bought this time: always a number of packs. Packs of a fixed size give the total; for things
+    sold by weight (size varies) this purchase also records what it weighed."""
     bid, unit = batch["batch_id"], batch.get("unit") or "each"
     units = records._float(batch.get("units")) or 0.0
-    size = records._float((product or {}).get("pack_size")) if (product or {}).get("pack_unit") in ("", None, unit) else None
+    product = product or {}
+    varies = product.get("pack_varies") == "yes"
+    size = records._float(product.get("pack_size")) if product.get("pack_unit") in ("", None, unit) else None
     packs = records._float(batch.get("packs"))
-    if size and packs and packs >= 1 and abs(packs - round(packs)) < 1e-9:
-        label = f"🛒 {packs:g} pack{'s' if packs != 1 else ''} · {amount_text(units, unit)}"
+    shown_packs = packs if packs and packs >= 1 and abs(packs - round(packs)) < 1e-9 else None
+    if varies or size:
+        n_text = f"{(shown_packs or 1):g} pack{'s' if (shown_packs or 1) != 1 else ''}"
+        label = f"🛒 {n_text} · {amount_text(units, unit)}"
     else:
         label = f"🛒 {amount_text(units, unit)}"
     with st.popover(label, key=f"ii_boughtpop_{bid}"):
         st.caption("What you bought this time")
-        if size:
-            n = st.number_input("Packs bought", value=float(packs or round(units / size, 2) or 1.0), min_value=0.0,
-                                step=1.0, format="%g", key=_k(f"ii_packs_bought_{bid}", units, packs, size))
-            st.caption(f"= {n:g} × {amount_text(size, unit)} = **{amount_text(n * size, unit)}**")
-            if abs(n * size - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
-                records.set_bought(bid, n * size, n)
-                st.toast(f"Bought: {amount_text(n * size, unit)}")
-                _refresh()
+        n = st.number_input("Packs bought", value=float(shown_packs or (round(units / size, 2) if size and units else 1.0)),
+                            min_value=0.0, step=1.0, format="%g", key=_k(f"ii_packs_bought_{bid}", units, packs, size, varies))
+        if varies:  # sold by weight: this purchase's own weight
+            total = amount_input("This time it weighed", units, unit, key=_k(f"ii_amount_bought_{bid}", units))
+        elif size:
+            total = n * size
+            st.caption(f"= {n:g} × {amount_text(size, unit)} = **{amount_text(total, unit)}**")
         else:
-            new = amount_input("Amount bought", units, unit, key=_k(f"ii_amount_bought_{bid}", units))
-            if new is not None and abs(new - units) > 1e-9 and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
-                records.set_bought(bid, new)
-                st.toast(f"Bought: {amount_text(new, unit)}")
-                _refresh()
+            st.caption("No pack size yet: set it in 📦, or mark it as sold by weight there.")
+            total = amount_input("Amount bought", units, unit, key=_k(f"ii_amount_bought_{bid}", units))
+        if total is not None and (abs(total - units) > 1e-9 or n != (packs or 0)) \
+                and st.button("Save", key=f"ii_bought_save_{bid}", type="primary"):
+            records.set_bought(bid, total, n)
+            st.toast(f"Bought: {n:g} pack{'s' if n != 1 else ''} · {amount_text(total, unit)}")
+            _refresh()
 
 
 def _quick_actions(batch):
@@ -377,12 +383,22 @@ def _pack(product, item):
     pid, unit = product["product_id"], product.get("pack_unit") or item.get("unit") or "each"
     known = records._float(product.get("pack_size"))
     old_count = records._float(product.get("pack_count"))
-    if known:
+    varies = product.get("pack_varies") == "yes"
+    if varies:
+        label = f"📦 size varies ({unit})"
+    elif known:
         n = int(old_count or 1)
         label = f"📦 pack: {n} × {amount_text(known / n, unit)}" if n > 1 else f"📦 pack: {amount_text(known, unit)}"
     else:
         label = "📦 pack size?"
     with st.popover(label, key=f"ii_packpop_{pid}"):
+        now_varies = st.toggle("Size varies (sold by weight)", value=varies, key=_k(f"ii_varies_{pid}", varies),
+                               help="Salmon, a pack of chicken, produce by the pound: each pack weighs something "
+                                    "different, so each purchase records its own weight in 🛒")
+        if now_varies != varies:
+            records.set_pack_varies(pid, now_varies)
+            st.toast("Size varies: each purchase keeps its own weight" if now_varies else "Fixed pack size")
+            _refresh()
         item_unit = item.get("unit") or unit
         new_unit = st.selectbox("Measured in", UNITS, index=UNITS.index(unit) if unit in UNITS else 0,
                                 key=_k(f"ii_unit_{pid}", unit), help=f"How {item.get('name', 'this item')} is measured, for every purchase")
@@ -392,6 +408,12 @@ def _pack(product, item):
                        + ("Amounts are converted." if moved is not None or not known else
                           "Purchases are recounted as packs × the size below."))
             known = moved
+        if varies:
+            st.caption("Each purchase records its own weight in 🛒.")
+            if new_unit != unit and st.button("Save", key=f"ii_packs_{pid}", type="primary"):
+                records.change_item_unit(item["item_id"], new_unit, None)  # weights simply convert (lb <-> oz)
+                _refresh()
+            return
         size, count = pack_input(known, old_count, new_unit, key=_k(f"ii_pack_{pid}_{new_unit}", known, old_count))
         changed_unit = new_unit != item_unit or new_unit != unit
         if size and (changed_unit or abs(size - (known or 0)) > 1e-9 or count != int(old_count or 1)) \

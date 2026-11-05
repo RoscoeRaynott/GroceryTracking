@@ -410,6 +410,10 @@ _Status: gathering requirements. No code until the plan is approved._
   - The barcode (free database, then Google) or the photo (read in any language) gives the **exact name and brand**, e.g. "Shan Chicken White Karahi Masala". The app then **automatically searches the web with that exact name** for the photo, pack size, ingredients and nutrition, and shows one preview.
   - The preview shows **name / brand changes** ("Shan masala → Shan Chicken White Karahi Masala") with **Use the found name / brand** (ticked). Purchases take the new name. **Yes, use it** works whenever anything would change.
   - What the photo read (ingredients, nutrition) **wins** over the web and replaces earlier label info, marked "(from your photo)". Everything else still only fills empty fields. The barcode is kept.
+- **🛒 Bought is always a count of packs (decided):**
+  - 📦 **Pack** = Measured in + Items in one pack × Size of one item (e.g. 12 × 330 ml). 🛒 **Bought** = Packs bought (1, 2…); total = packs × pack.
+  - **"Size varies (sold by weight)"** toggle in 📦 for salmon, chicken packs, produce by the pound (products `pack_varies` = "yes"). Those have no fixed pack size; 🛒 asks Packs bought **and "This time it weighed"** (lb + oz), stored on that purchase. It counts as a known pack size in the completion bar and Needs info.
+  - Until a pack size is set, 🛒 shows Packs bought plus the amount, with a hint to set 📦.
 - **Consistency rules (decided, after a full check):**
   - Every edit box that shows *saved* data (item panel chips, pack, bought, expiry, search words, Insights' Kept in) is tied to the saved value, so it always starts from what's stored, even after a lookup, voice or another screen changed it.
   - Items counted in "each": the pack editor only asks **Items in one pack** (one item = 1 each), so Save always appears.

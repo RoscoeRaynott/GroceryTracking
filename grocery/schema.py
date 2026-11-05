@@ -18,6 +18,7 @@ TABS = {
         "nutrition_status",  # "none" = you said it has no nutrition label worth tracking
         "pack_count",  # how many separate units in one pack as sold (2 tubs); pack_size is the total
         "piece_grams",  # typical weight of one piece for items counted in "each" (USDA: medium banana = 118 g)
+        "pack_varies",  # "yes": sold by weight, each pack differs (salmon, chicken); each purchase records its own weight
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [
