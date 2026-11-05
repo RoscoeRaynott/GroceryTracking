@@ -98,7 +98,7 @@ def _panel(bid):
     with st.container(horizontal=True, gap="small"):
         _kept(item)
         if item.get("perishable") == "yes":  # only things that go bad need an expiry date (same rule as the bar)
-            _expiry(batch)
+            _expiry(batch, item)
         _bought(batch, product)
         if product:
             _pack(product, item)
@@ -392,11 +392,20 @@ def _kept(item):
             _refresh()
 
 
-def _expiry(batch):
+def _expiry(batch, item):
     import datetime as dt
     current = dt.date.fromisoformat(batch["expiry_date"]) if batch.get("expiry_date") else None
-    label = f"⏳ exp {current:%b %d}" if current else "⏳ no expiry"
+    undated = item.get("no_expiry") == "yes"
+    label = f"⏳ exp {current:%b %d}" if current else "⏳ no date printed" if undated else "⏳ expiry?"
     with st.popover(label, key=f"ii_exppop_{batch['batch_id']}"):
+        if st.toggle("No date printed on it", value=undated, key=_k(f"ii_noexp_{item['item_id']}", undated),
+                     help="For every purchase of this item (e.g. avocados). How long it really lasts is learned "
+                          "from your own history in Insights.") != undated:
+            records.set_no_expiry(item["item_id"], not undated)
+            st.toast("No date printed: counted as done" if not undated else "Expiry date wanted again")
+            _refresh()
+        if undated and not current:
+            return
         st.caption("This purchase only")
         day = st.date_input("Expiry date", value=current, key=_k(f"ii_exp_{batch['batch_id']}", current),
                             format="MM/DD/YYYY", label_visibility="collapsed")
@@ -628,7 +637,12 @@ def _edit_names(product):
     tag = _k(pid, product["name"], product.get("brand", ""))
     with st.popover("", icon=":material/edit:", key=f"ii_namepop_{pid}", help="Fix name or brand"):
         name = st.text_input("Product name", value=product["name"], key=f"ii_name_{tag}")
-        brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{tag}")
+        no_brand = product.get("no_brand") == "yes"
+        if st.toggle("No brand (e.g. loose avocados)", value=no_brand, key=_k(f"ii_nobrand_{pid}", no_brand)) != no_brand:
+            records.set_no_brand(pid, not no_brand)
+            st.toast("No brand" if not no_brand else "Brand can be filled in")
+            _refresh()
+        brand = st.text_input("Brand", value=product.get("brand", ""), key=f"ii_brand_{tag}", disabled=no_brand)
         if (name.strip() != product["name"] or brand.strip() != product.get("brand", "")) and name.strip() \
                 and st.button("Save", key=f"ii_names_{pid}", type="primary"):
             records.rename_product(pid, name, brand)
