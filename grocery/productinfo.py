@@ -225,7 +225,14 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
     prompt = SEARCH_PROMPT.format(query=query or f"barcode {barcode}", shape=INFO_SHAPE, unit=unit,
                                   store_rule=store_rule,
                                   barcode_rule=BARCODE_RULE.format(barcode=barcode) if barcode else "")
-    result, sources = gemini.search_json("product_web_lookup", model, prompt)
+    try:
+        result, sources = gemini.search_json("product_web_lookup", model, prompt)
+    except gemini.GeminiError as ex:
+        if "RECITATION" not in str(ex):
+            raise
+        # Google blocked the answer for copying the label text word for word: ask for it in three small parts.
+        result, sources = _lookup_in_parts(model, query or f"barcode {barcode}", unit, store_rule,
+                                           BARCODE_RULE.format(barcode=barcode) if barcode else "")
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
     info = _from_ai(dict(result.get("info") or {}, name=result.get("matched_name") or ""), "Web search",
@@ -441,6 +448,40 @@ ingredient separately as a short lowercase name in its own array item, in the sa
 {{"found": true/false, "ingredients": the ingredients as one comma-separated list, or "",
   "reason": one sentence}}""",
 }
+
+
+def _lookup_in_parts(model, query, unit, store_rule, barcode_rule=""):
+    """Product only + nutrition only + ingredients as separate items, at the same time, combined into the
+    usual lookup reply. Only the product part must succeed; the other two are a bonus."""
+    from concurrent.futures import ThreadPoolExecutor
+    try:  # keep the app's session attached to the worker threads (their AI calls are logged)
+        from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+        ctx = get_script_run_ctx()
+        start = (lambda: add_script_run_ctx(ctx=ctx)) if ctx else None
+    except ImportError:
+        start = None
+    rule = store_rule + barcode_rule + ("\n" if barcode_rule else "")
+
+    def run(part):
+        prompt = LAB_PROMPTS[part].format(query=query, store_rule=rule, unit=unit, nutrients=NUTRIENT_LIST)
+        try:
+            return gemini.search_json(f"lookup_{part}", model, prompt)
+        except gemini.GeminiError:
+            return ({}, [])
+
+    with ThreadPoolExecutor(max_workers=3, initializer=start) as pool:
+        product, nutrition, items = pool.map(run, ["product", "nutrition", "ingredient_items"])
+    (p, sources), (n, n_src), (i, i_src) = product, nutrition, items
+    ingredients = []
+    for x in i.get("ingredient_items") or []:
+        x = str(x).strip()
+        if x and x.lower() not in {y.lower() for y in ingredients}:
+            ingredients.append(x)  # sub-recipes repeat salt, sugar…: keep the first
+    info = {"serving_size": n.get("serving_size") or "", "servings_per_pack": n.get("servings_per_pack"),
+            "nutrients": n.get("nutrients") or {}, "ingredients": ", ".join(ingredients)}
+    reply = dict(p, info=info, has_label_info=bool(info["nutrients"] or ingredients),
+                 reason=(p.get("reason") or "") + " (Label text was blocked, so it was fetched in parts.)")
+    return reply, sources + [s for s in n_src + i_src if s not in sources]
 
 
 def lab_lookup(model, part, query, unit="each", store=""):
