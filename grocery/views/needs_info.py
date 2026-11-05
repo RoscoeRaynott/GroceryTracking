@@ -8,6 +8,7 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ct
 from grocery import camera, photos, productinfo, records, sheets
 from grocery.gemini import GeminiError
 from grocery.views import product_ui
+from grocery.views.amounts import amount_input
 from grocery.views.common import back_home
 
 
@@ -250,8 +251,7 @@ def _pack_field(p, info):
     known = records._float(info.get("pack_units")) or records._float(p.get("pack_size"))
     if not known and "size" not in p["missing"]:
         return
-    size = st.number_input(f"1 pack = how many {unit}?", value=known, min_value=0.0, step=1.0, format="%g",
-                           key=f"ni_pack_{pid}", placeholder=f"Type the {unit} in one pack")
+    size = amount_input("1 pack", known, unit, key=f"ni_pack_{pid}", placeholder=f"Type the {unit} in one pack")
     if not info.get("pack_units") and info.get("pack_text"):
         st.caption(f"The page says “{info['pack_text']}”, but no {unit} amount came back. Type it above.")
     info["pack_units"], info["pack_unit"] = (size or None), unit
