@@ -3,11 +3,12 @@
 A test bench only: nothing here is saved to your products. Each search is still logged in ai_log.
 """
 
+import json
 import time
 
 import streamlit as st
 
-from grocery import productinfo, records, sheets
+from grocery import productinfo, records, sheets, usda
 from grocery.gemini import GeminiError
 from grocery.views.common import back_home, go
 
@@ -23,6 +24,9 @@ def render():
     st.title("🧪 Lookup lab")
     st.caption("Try each kind of search on one product and see what comes back, or whether Google blocks it "
                "(RECITATION). Nothing here is saved.")
+
+    _usda_test()
+    st.divider()
 
     live = records.live_batches()
     in_pantry = {b.get("product_id") for b in live if b.get("status") == "open"}
@@ -93,3 +97,51 @@ def _show(part, res):
         st.caption(r["reason"])
     for title, url in res.get("sources", [])[:3]:
         st.markdown(f"- [{title or url}]({url})")
+
+
+def _usda_test():
+    """Shows USDA's raw answer (trimmed) so its format can be checked. Nothing is saved; the key is never shown."""
+    with st.container(border=True):
+        st.markdown("**📚 USDA test** :gray[raw answer, to copy into the chat]")
+        if not usda.api_key():
+            st.warning("No USDA_API_KEY found in Streamlit secrets.")
+            return
+        q = st.text_input("Food", value="banana raw", key="lab_usda_q")
+        if st.button("Ask USDA", key="lab_usda_go", type="primary") and q.strip():
+            with st.spinner("Asking USDA…"):
+                try:
+                    found = usda.search(q.strip())
+                    foods = found.get("foods") or []
+                    detail = usda.food(foods[0]["fdcId"]) if foods else {}
+                    st.session_state["lab_usda_out"] = json.dumps(_trim(found, detail), indent=1)[:12000]
+                except Exception as ex:
+                    st.session_state["lab_usda_out"] = f"ERROR: {ex}"
+        if st.session_state.get("lab_usda_out"):
+            st.code(st.session_state["lab_usda_out"], language="json")
+
+
+def _trim(found, detail):
+    """Just the parts that matter: the matches, their nutrients, and the first match's portions."""
+    def nutrients(rows):
+        out = []
+        for n in rows or []:
+            name = n.get("nutrientName") or (n.get("nutrient") or {}).get("name")
+            unit = n.get("unitName") or (n.get("nutrient") or {}).get("unitName")
+            value = n.get("value", n.get("amount"))
+            if name and value is not None:
+                out.append(f"{name} = {value} {unit}")
+        return out
+    return {
+        "totalHits": found.get("totalHits"),
+        "matches": [{"fdcId": f.get("fdcId"), "description": f.get("description"), "dataType": f.get("dataType"),
+                     "keys": sorted(f.keys()), "nutrients": nutrients(f.get("foodNutrients"))[:40]}
+                    for f in (found.get("foods") or [])[:3]],
+        "first_match_detail": {
+            "keys": sorted(detail.keys()),
+            "description": detail.get("description"), "dataType": detail.get("dataType"),
+            "foodPortions": [{k: p.get(k) for k in ("amount", "gramWeight", "modifier", "portionDescription",
+                                                     "measureUnit", "sequenceNumber")}
+                             for p in (detail.get("foodPortions") or [])][:10],
+            "nutrient_row_example": (detail.get("foodNutrients") or [None])[0],
+        },
+    }
