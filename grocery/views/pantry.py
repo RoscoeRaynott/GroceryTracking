@@ -31,7 +31,10 @@ def render():
         st.info("Nothing open. Add a purchase to fill your pantry.")
         return
 
-    records.fill_missing_item_pictures()
+    if not st.session_state.get("pictures_tried"):
+        # Missing pictures come from Wikipedia, which can be slow: try once per visit, never on every tap.
+        st.session_state["pictures_tried"] = True
+        records.fill_missing_item_pictures()
     products = {p["product_id"]: p for p in records.products()}
     for r in rows:
         r["product"] = products.get(r["batch"].get("product_id"))
@@ -82,8 +85,9 @@ TILE_CSS = """<style>
 [class*="st-key-tile_"] { position: relative; padding: 6px 4px 8px; }
 [class*="st-key-tile_"] [data-testid="stMarkdown"], [class*="st-key-tile_"] [data-testid="stMarkdownContainer"],
 [class*="st-key-tile_"] [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
-[class*="st-key-pi_"] { position: absolute; inset: 0; z-index: 5; margin: 0; }
-[class*="st-key-pi_"] button { width: 100%; height: 100%; opacity: 0; }
+[class*="st-key-pi_"] { position: absolute !important; inset: 0 !important; width: auto !important; z-index: 5; margin: 0; }
+[class*="st-key-pi_"] > div, [class*="st-key-pi_"] button { width: 100% !important; height: 100% !important; }
+[class*="st-key-pi_"] button { opacity: 0; touch-action: manipulation; }
 [class*="st-key-ni_pick_"] { position: absolute; top: 2px; left: 4px; z-index: 6; }
 </style>"""
 COLORS = {"green": ("#21C35433", "#3DD56D"), "orange": ("#FFA42133", "#FFBD45"), "red": ("#FF4B4B33", "#FF6C6C")}
