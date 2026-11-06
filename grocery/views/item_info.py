@@ -122,12 +122,47 @@ FIELD_NAMES = {"photo_url": "photo", "serving_size": "serving size", "servings_p
 
 
 def _picture(product, item):
-    """The picture; tap the 🔍 to see it big."""
+    """The picture; 🔍 shows it big, 🖼 finds a new one (choose from up to 3)."""
     product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
+    tag = f"{item.get('item_id')}_{(product or {}).get('product_id', '')}"
     url = (product or {}).get("photo_url") or (item.get("photo_url") if item.get("photo_url") not in ("", "none") else "")
-    if url:
-        with st.popover("", icon=":material/zoom_in:", key=f"ii_zoom_{item.get('item_id')}_{(product or {}).get('product_id', '')}"):
-            st.image(url, width="stretch")
+    with st.container(gap=None):
+        if url:
+            with st.popover("", icon=":material/zoom_in:", key=f"ii_zoom_{tag}"):
+                st.image(url, width="stretch")
+        if product:
+            with st.popover("", icon=":material/image_search:", key=f"ii_pics_{tag}", help="Find a picture"):
+                _picture_choices(product, item)
+
+
+def _picture_choices(product, item):
+    pid = product["product_id"]
+    key = f"ii_picopts_{pid}"
+    choices = st.session_state.get(key)
+    if choices is None:
+        st.caption("Find a picture: from its barcode, the web, or a generic one.")
+        if st.button("🖼 Find pictures", key=f"{key}_go", type="primary"):
+            with st.spinner("Looking for pictures…"):
+                st.session_state[key] = productinfo.picture_choices(
+                    sheets.get_settings()["model_lookup"], product, item.get("name") or product["name"],
+                    records.lookup_store(product))
+            _refresh()
+        return
+    if not choices:
+        st.warning("No picture found that loads. Try again later.")
+    with st.container(horizontal=True):
+        for n, (url, where) in enumerate(choices):
+            with st.container(width=96, gap=None, horizontal_alignment="center"):
+                st.image(url, width=88)
+                st.caption(where)
+                if st.button("Use this", key=f"{key}_use_{n}", type="tertiary"):
+                    records.set_photo(pid, url)
+                    st.session_state.pop(key, None)
+                    st.toast("Picture updated")
+                    _refresh()
+    if st.button("Search again", key=f"{key}_again", type="tertiary"):
+        st.session_state.pop(key, None)
+        _refresh()
 
 
 def _find_info(product, item):
