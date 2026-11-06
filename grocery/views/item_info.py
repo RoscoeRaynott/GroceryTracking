@@ -192,7 +192,9 @@ def _find_info(product, item):
         with st.container(horizontal=True, vertical_alignment="center"):
             if found.get("photo_url"):
                 st.image(found["photo_url"], width=64)
-            st.markdown(f"**{found.get('name', '')}**  \n:gray[{found.get('source', '')} · is this it?]")
+            how = {"barcode": f"🔢 found by its barcode {found.get('barcode', '')}", "photo": "📷 found from your photo",
+                   "name": "🔤 found by name"}.get(found.get("via"), found.get("source", ""))
+            st.markdown(f"**{found.get('name', '')}**  \n:gray[{how} · is this it?]")
         if found.get("url"):
             st.markdown(f"[Open the page it used]({found['url']})")
         cols = productinfo.product_columns(found)
@@ -257,6 +259,7 @@ def _find_info(product, item):
                 _refresh()
 
 
+VIA = {"barcode": "🔢", "photo": "📷", "name": "🔤"}  # how an item was looked up
 SCANS = "scan_queue"  # {product_id: {"barcode": digits, "photos": [jpeg bytes]}}: scanned, not yet looked up
 
 

@@ -763,19 +763,9 @@ def lookup_store(product):
     return big_chain(latest.get("store")) or ""
 
 
-# How many of the base unit are in one of each unit: weights in oz, volumes in fl oz.
-_CONVERT = {"oz": ("weight", 1.0), "lb": ("weight", 16.0),
-            "fl oz": ("volume", 1.0), "qt": ("volume", 32.0), "gal": ("volume", 128.0), "ml": ("volume", 1 / 29.5735)}
-
-
 def convert(amount, from_unit, to_unit):
     """Amount in from_unit expressed in to_unit, or None when they can't be converted (e.g. each -> fl oz)."""
-    a, b = _CONVERT.get(from_unit), _CONVERT.get(to_unit)
-    if from_unit == to_unit:
-        return amount
-    if not a or not b or a[0] != b[0] or amount is None:
-        return None
-    return amount * a[1] / b[1]
+    return productinfo.convert(amount, from_unit, to_unit)
 
 
 def change_item_unit(item_id, new_unit, product_id):
