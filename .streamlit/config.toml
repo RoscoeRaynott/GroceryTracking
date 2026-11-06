@@ -1,6 +1,7 @@
 [server]
 maxUploadSize = 200
 maxMessageSize = 200
+enableStaticServing = true  # pictures are served as small cached files (static/pics), not resent on every tap
 
 [browser]
 gatherUsageStats = false

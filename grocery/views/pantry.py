@@ -4,7 +4,10 @@ The "Needs info" view (it used to be its own page) shows only items with somethi
 tapping any tile opens the item panel, which has every tool to fill it.
 """
 
+import base64
+import hashlib
 import html
+import pathlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
@@ -64,6 +67,7 @@ def render():
         lookable = set()
     st.caption("Tap an item to see everything about it, fix it, mark it finished or say some went bad.")
     st.markdown(TILE_CSS, unsafe_allow_html=True)
+    st.html(TAP_JS, unsafe_allow_javascript=True)
 
     food = [r for r in shown if r["item"].get("kind", "Food") == "Food"]
     groups = [(f"{place}", [r for r in food if (r["item"].get("storage") or "Open air") == place]) for place in PLACES]
@@ -83,7 +87,15 @@ def render():
 # wide photos line up. The whole tile is one invisible button (tap anywhere on it to open the item); the tick
 # box in "Needs info" sits above it.
 TILE_CSS = """<style>
-[class*="st-key-tile_"] { position: relative; padding: 6px 4px 8px; }
+[class*="st-key-tile_"] { position: relative; padding: 6px 4px 8px; transition: transform .08s, background .08s, opacity .15s;
+  -webkit-tap-highlight-color: transparent; }
+/* Instant feedback: the tile presses in the moment it's touched */
+[class*="st-key-tile_"]:active, [class*="st-key-tile_"]:has(button:active) { transform: scale(.94); background: rgba(255,75,75,.18); }
+/* While the app is working, tiles dim and ignore taps, so an extra tap can't get lost or close the panel */
+.stApp[data-test-script-state="running"] [class*="st-key-tile_"] { opacity: .5; }
+.stApp[data-test-script-state="running"] [class*="st-key-pi_"] button,
+.stApp[data-test-script-state="running"] [class*="st-key-ni_pick_"] { pointer-events: none; }
+[class*="st-key-tile_"].gt-pressed { transform: scale(.94); background: rgba(255,75,75,.18); opacity: 1 !important; }
 [class*="st-key-tile_"] [data-testid="stMarkdown"], [class*="st-key-tile_"] [data-testid="stMarkdownContainer"],
 [class*="st-key-tile_"] [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
 [class*="st-key-pi_"] { position: absolute !important; inset: 0 !important; width: auto !important; z-index: 5; margin: 0; }
@@ -91,6 +103,36 @@ TILE_CSS = """<style>
 [class*="st-key-pi_"] button { opacity: 0; touch-action: manipulation; }
 [class*="st-key-ni_pick_"] { position: absolute; top: 2px; left: 4px; z-index: 6; }
 </style>"""
+# Smoother taps (installed once per page load):
+# - the tile you tapped stays pressed until the app has answered, so you know it heard you;
+# - for 0.8 s after the item panel opens, taps outside it are ignored, so a second tap on the tile
+#   can't close the panel it just opened.
+TAP_JS = """<script>
+(() => {
+  if (window.__gtTaps) return; window.__gtTaps = true;
+  const doc = window.parent && window.parent.document ? window.parent.document : document;
+  let openedAt = 0, hadDialog = false;
+  new MutationObserver(() => {
+    const has = !!doc.querySelector('[role="dialog"]');
+    if (has && !hadDialog) openedAt = Date.now();
+    hadDialog = has;
+    const app = doc.querySelector('.stApp');
+    if (app && app.getAttribute('data-test-script-state') !== 'running')
+      doc.querySelectorAll('.gt-pressed').forEach(t => t.classList.remove('gt-pressed'));
+  }).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-test-script-state'] });
+  const guard = e => {
+    if (Date.now() - openedAt < 800 && !(e.target.closest && e.target.closest('[role="dialog"]'))) {
+      e.stopPropagation(); e.preventDefault();
+    }
+  };
+  ['pointerdown', 'mousedown', 'touchstart', 'click', 'pointerup', 'mouseup', 'touchend'].forEach(
+    type => doc.addEventListener(type, guard, { capture: true, passive: false }));
+  doc.addEventListener('pointerdown', e => {
+    const tile = e.target.closest && e.target.closest('[class*="st-key-tile_"]');
+    if (tile) tile.classList.add('gt-pressed');
+  }, true);
+})();
+</script>"""
 COLORS = {"green": ("#21C35433", "#3DD56D"), "orange": ("#FFA42133", "#FFBD45"), "red": ("#FF4B4B33", "#FF6C6C")}
 
 
@@ -108,9 +150,33 @@ def _tile(r, picking):
             st.checkbox("Include in Look up all", key=f"ni_pick_{pid}", label_visibility="collapsed")
 
 
+STATIC = pathlib.Path(__file__).resolve().parents[2] / "static" / "pics"
+
+
+def picture_file(url):
+    """A saved picture (a data URI) as a small file the browser keeps, so a tap doesn't resend every tile's
+    picture. Falls back to the data URI itself if the file can't be written."""
+    if not str(url).startswith("data:image/"):
+        return url
+    try:
+        head, data = url.split(",", 1)
+        ext = "png" if "png" in head else "webp" if "webp" in head else "jpg"
+        name = f"{hashlib.sha1(data.encode()).hexdigest()[:16]}.{ext}"
+        path = STATIC / name
+        if not path.exists():
+            STATIC.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_bytes(base64.b64decode(data))
+            tmp.replace(path)
+        return f"app/static/pics/{name}"
+    except Exception:
+        return url
+
+
 def _tile_html(r):
     b, item, product = r["batch"], r["item"], r["product"]
     url = (product or {}).get("photo_url") or (item.get("photo_url") if item.get("photo_url") not in ("", "none") else "")
+    url = picture_file(url)
     picture = (f'<img src="{html.escape(url)}" style="width:70px;height:70px;object-fit:contain">' if url else
                f'<span style="font-size:46px;line-height:70px">{item.get("emoji") or "🛒"}</span>')
     bg, fg = COLORS[BADGE[r["level"]]]
