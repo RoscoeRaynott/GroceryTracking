@@ -602,3 +602,49 @@ def fill_pack_from_text(info, unit):
                 info["pack_text"] = info.get("pack_text") or text
             break
     return info
+
+
+# ---------------------------------------------------------------- picture choices
+
+PICTURE_PROMPT = """Find photos of this exact grocery product: {query}
+{store_rule}Look at the store's or maker's product pages and image results. Return only JSON:
+{{"images": [up to 5 DIRECT image URLs (ending in .jpg, .jpeg, .png or .webp, or an image CDN link) that show this
+  exact product or its package, best first], "pages": [the product page URLs you found]}}"""
+
+
+def picture_choices(model, product, item_name, store="", limit=3):
+    """Up to `limit` pictures that really load, best first: the barcode database's front photo, photos of the exact
+    product from the web, then a generic picture of the food. [(url, where it came from)]."""
+    out, seen = [], set()
+
+    def add(url, label):
+        url = checked_image(url)
+        if url and url not in seen and len(out) < limit:
+            seen.add(url)
+            out.append((url, label))
+
+    if product.get("barcode"):
+        try:
+            add(off_by_barcode(product["barcode"]).get("photo_url"), "barcode database")
+        except Exception:
+            pass
+    if len(out) < limit:
+        store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
+                      else GENERAL_RULE)
+        query = " ".join(x for x in [product.get("brand", ""), product.get("name", "")] if x).strip()
+        try:
+            found, sources = gemini.search_json("picture_search", model, PICTURE_PROMPT.format(query=query, store_rule=store_rule))
+            for url in (found.get("images") or [])[:6]:
+                add(url, "web")
+            for page in list(found.get("pages") or [])[:2] + [u for _, u in sources[:2]]:
+                if len(out) >= limit:
+                    break
+                add(page_image(page), "product page")
+        except Exception:
+            pass
+    if len(out) < limit:
+        try:
+            add(wiki_image(item_name), "generic picture")
+        except Exception:
+            pass
+    return out
