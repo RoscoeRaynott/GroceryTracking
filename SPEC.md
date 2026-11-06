@@ -587,3 +587,9 @@ _Status: gathering requirements. No code until the plan is approved._
   - A caption says how many were skipped and why.
 - **Tick all / Untick all** are real buttons next to Look up all (they were hidden behind it by the tick-box style). Only items Look up all will act on get a tick box.
 - **What you do:** scan the barcode; for imported (Pakistani, Indian, East Asian) items also photograph the back label and front; then 🔎 Look up all.
+
+## Smoother taps (built)
+- Each tap goes to the server and back (Streamlit redraws the page); the server part is fast (~0.1 s for 40 items), so the delay is the round trip.
+- **Instant feedback:** a tile presses in the moment it's touched and stays highlighted until the app answers.
+- **No lost or double taps:** while the app is working, tiles dim and ignore taps. For 0.8 s after the item panel opens, taps outside it are ignored, so a second tap can't close it again (a small page script, `TAP_JS`).
+- **Less to send per tap:** saved pictures are served as small files the phone keeps (`static/pics`, Streamlit static serving) instead of being resent inside every tile on every tap.
