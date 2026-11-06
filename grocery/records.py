@@ -496,7 +496,7 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
     filled = [k for k in change if k not in ("info_status", "info_source")]
     if new_name or new_brand:
         rename_product(product_id, new_name or product.get("name", ""),
-                       new_brand if new_brand is not None else product.get("brand", ""))
+                       new_brand if new_brand is not None else change.get("brand", product.get("brand", "")))
         filled.append("name")
     if new_item:
         move_to_item(product_id, new_item)
