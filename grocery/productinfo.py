@@ -71,7 +71,9 @@ If the front of the pack is shown, "name" is the FULL product name exactly as pr
 The label may be in any language (Bengali, Hindi, Arabic, Chinese…): read it and write everything in English.
 If the nutrition table gives values per 100 g (or 100 ml) instead of per serving, set "serving_size" to
 "100 g" (or "100 ml") and give the amounts per 100 g. Give "dv" only where a % daily value is printed,
-else null. Return only JSON:
+else null. Also give "front_photo": the number (1 = first) of the photo that shows the FRONT of the pack, or
+null if none does, and "quantity": the net weight / volume / count as printed (e.g. "200 g", "2 x 32 fl oz"),
+or "". Return only JSON:
 {INFO_SHAPE}"""
 
 SEARCH_PROMPT = """Identify this grocery product and, if published, read its ingredients and Nutrition Facts.
@@ -218,7 +220,7 @@ def by_barcode(model, barcode, query="", unit="each", store=""):
         return web_lookup(model, query, unit, barcode=barcode, store=store)
 
 
-def web_lookup(model, query, unit="each", barcode="", store=""):
+def web_lookup(model, query, unit="each", barcode="", store="", needs=None):
     """query = short search text (brand, product, real size, big-chain store).
     unit = the item's standard unit, so the pack size comes back in it.
     barcode = digits to search for first (used when Open Food Facts doesn't know the barcode)."""
@@ -234,7 +236,7 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
             raise
         # Google blocked the answer for copying the label text word for word: ask for it in three small parts.
         result, sources = _lookup_in_parts(model, query or f"barcode {barcode}", unit, store_rule,
-                                           BARCODE_RULE.format(barcode=barcode) if barcode else "")
+                                           BARCODE_RULE.format(barcode=barcode) if barcode else "", needs)
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
     info = _from_ai(dict(result.get("info") or {}, name=result.get("matched_name") or ""), "Web search",
@@ -261,7 +263,15 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
 
 def read_label(model, jpegs):
     result = gemini.generate_json("label_read", model, LABEL_PROMPT, [(j, "image/jpeg") for j in jpegs])
-    return _from_ai(result, "Label photo", "", [])
+    info = _from_ai(result, "Label photo", "", [])
+    info["quantity"] = str(result.get("quantity") or "")
+    front = _num(result.get("front_photo"))
+    if front and 1 <= int(front) <= len(jpegs):
+        try:  # your own photo of the front is the product's picture: no search needed for one
+            info["photo_url"] = thumbnail(jpegs[int(front) - 1], 200)
+        except Exception:
+            pass
+    return info
 
 
 def with_label(found, label):
@@ -457,9 +467,13 @@ ingredient separately as a short lowercase name in its own array item, in the sa
 }
 
 
-def _lookup_in_parts(model, query, unit, store_rule, barcode_rule=""):
+PART_NEEDS = {"nutrition": "nutrition", "ingredient_items": "ingredients"}
+
+
+def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None):
     """Product only + nutrition only + ingredients as separate items, at the same time, combined into the
-    usual lookup reply. Only the product part must succeed; the other two are a bonus."""
+    usual lookup reply. Only the product part must succeed; the other two are a bonus, and are only asked
+    for when they're still missing (each part is a paid search)."""
     from concurrent.futures import ThreadPoolExecutor
     try:  # keep the app's session attached to the worker threads (their AI calls are logged)
         from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
@@ -470,6 +484,8 @@ def _lookup_in_parts(model, query, unit, store_rule, barcode_rule=""):
     rule = store_rule + barcode_rule + ("\n" if barcode_rule else "")
 
     def run(part):
+        if needs is not None and part != "product" and PART_NEEDS[part] not in needs:
+            return ({}, [])  # already known: don't pay for it
         prompt = LAB_PROMPTS[part].format(query=query, store_rule=rule, unit=unit, nutrients=NUTRIENT_LIST)
         try:
             return gemini.search_json(f"lookup_{part}", model, prompt)
@@ -500,7 +516,7 @@ def lab_lookup(model, part, query, unit="each", store=""):
     return gemini.search_json(f"lab_{part}", model, prompt)
 
 
-def identify_then_search(model, found, unit="each", store=""):
+def identify_then_search(model, found, unit="each", store="", needs=None):
     """A barcode or a photo of the pack told us exactly what it is: search the web with that exact name for the
     photo, pack size and label info. What a photo of the label read always wins; the barcode is kept."""
     name = str(found.get("name") or "").strip()
@@ -509,11 +525,14 @@ def identify_then_search(model, found, unit="each", store=""):
     brand = str(found.get("brand") or "").strip()
     query = name if brand.lower() in name.lower() else f"{brand} {name}".strip()
     try:
-        web = web_lookup(model, query, unit, barcode=found.get("barcode", ""), store=store)
+        web = web_lookup(model, query, unit, barcode=found.get("barcode", ""), store=store, needs=needs)
     except Exception:
         return found  # the identification alone is still worth showing
     from_label = "label photo" in str(found.get("source", "")).lower()
     merged = with_label(web, found) if from_label else dict(web)
+    for key in ("photo_url", "pack_units", "pack_count", "pack_unit", "quantity"):  # what the first step already had
+        if found.get(key) and not merged.get(key):
+            merged[key] = found[key]
     merged["barcode"] = found.get("barcode") or web.get("barcode", "")
     merged["brand"] = brand or web.get("brand", "")
     if from_label:
@@ -521,18 +540,41 @@ def identify_then_search(model, found, unit="each", store=""):
     return merged
 
 
-def best_lookup(model, label_model, query, unit="each", store="", barcode="", photos=()):
-    """The best lookup for what we have: photos of the pack (read, then search with the exact name), else its
-    barcode (identify, then search with the exact name), else its name."""
+ALL_NEEDS = frozenset({"photo", "brand", "pack", "ingredients", "nutrition"})
+
+
+def still_missing(info, needs):
+    """Which of `needs` (photo, brand, pack, ingredients, nutrition) this result doesn't give."""
+    has = {"photo": info.get("photo_url"), "brand": info.get("brand"), "pack": info.get("pack_units"),
+           "ingredients": info.get("ingredients"), "nutrition": info.get("nutrients")}
+    return {n for n in needs if not has.get(n)}
+
+
+def best_lookup(model, label_model, query, unit="each", store="", barcode="", photos=(), needs=None):
+    """The cheapest lookup that fills what's missing (`needs`; None = everything):
+    1. photos of the pack: read by the cheap label model; the web is searched only if something's still missing.
+    2. a barcode: the free Open Food Facts database; the web is searched only if something's still missing,
+       or once by the barcode itself when the database doesn't know it.
+    3. otherwise one web search by name."""
+    needs = ALL_NEEDS if needs is None else frozenset(needs)
     if photos:
-        found = read_label(label_model, list(photos))
+        found = fill_pack_from_text(read_label(label_model, list(photos)), unit)
         if barcode and not found.get("barcode"):
             found["barcode"] = barcode
-        result, via = identify_then_search(model, found, unit, store), "photo"
+        left = still_missing(found, needs)
+        result = identify_then_search(model, found, unit, store, needs=left) if left else found
+        via = "photo"
     elif barcode:
-        result, via = identify_then_search(model, by_barcode(model, barcode, query, unit, store), unit, store), "barcode"
+        try:
+            found = fill_pack_from_text(off_by_barcode(barcode), unit)
+        except NotFound:  # unknown to the free database: one web search by the number (it finds the name too)
+            result = web_lookup(model, query, unit, barcode=barcode, store=store, needs=needs)
+        else:
+            left = still_missing(found, needs)
+            result = identify_then_search(model, found, unit, store, needs=left) if left else found
+        via = "barcode"
     else:
-        result, via = web_lookup(model, query, unit, store=store), "name"
+        result, via = web_lookup(model, query, unit, store=store, needs=needs), "name"
     result["via"] = via  # shown on the tile and in the preview: how this item was found
     return fill_pack_from_text(result, unit)
 

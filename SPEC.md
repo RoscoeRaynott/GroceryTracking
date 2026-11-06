@@ -573,3 +573,17 @@ _Status: gathering requirements. No code until the plan is approved._
 ## Open questions
 
 - (pending)
+
+## Lookup cost (decided, built)
+- **Cost facts (checked):** Gemini's Google Search grounding: 5,000 free searches a month, then $14 per 1,000. Each search a lookup runs is billed. Claude Pro ($20) doesn't include API use; Claude's API web search is $10 per 1,000 plus tokens, so switching wouldn't save money.
+- **Cheapest first, stop when it's enough** (same steps for every item; only where it stops differs):
+  1. **📷 Label photos** → read by the cheap label model (any language). No web search when the photos give everything still missing. The photo of the front becomes the item's picture; the printed net quantity gives the pack size.
+  2. **🔢 Barcode** → the free Open Food Facts database. No web search when it gives everything still missing. A barcode it doesn't know costs **one** web search (by the number), not two.
+  3. **🔤 Name** → one web search.
+  - When Google blocks an answer and it's fetched in parts, only the parts still missing are asked for.
+- **Look up all skips** (unless something new was scanned for the item):
+  - items a lookup can't help: only a photo, kept in or a date missing (🖼 in the item finds pictures from free sources first); loose food's nutrition comes from 📚 USDA (free).
+  - items not found in the last **30 days** (products `lookup_missed_on`); scanning a barcode or saving a find clears it.
+  - A caption says how many were skipped and why.
+- **Tick all / Untick all** are real buttons next to Look up all (they were hidden behind it by the tick-box style). Only items Look up all will act on get a tick box.
+- **What you do:** scan the barcode; for imported (Pakistani, Indian, East Asian) items also photograph the back label and front; then 🔎 Look up all.
