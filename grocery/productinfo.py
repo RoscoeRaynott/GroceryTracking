@@ -606,40 +606,89 @@ def fill_pack_from_text(info, unit):
 
 # ---------------------------------------------------------------- picture choices
 
-PICTURE_PROMPT = """Find photos of this exact grocery product: {query}
-{store_rule}Look at the store's or maker's product pages and image results. Return only JSON:
-{{"images": [up to 5 DIRECT image URLs (ending in .jpg, .jpeg, .png or .webp, or an image CDN link) that show this
-  exact product or its package, best first], "pages": [the product page URLs you found]}}"""
+PICTURE_PROMPT = """Find this exact grocery product online: {query}
+{store_rule}Return only JSON:
+{{"pages": [up to 4 product page URLs for this exact product (the store's or maker's own page first, then other
+  shops)], "images": [direct image URLs of it ONLY if you actually saw them on those pages, else []]}}"""
+
+BROWSER_UA = ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0 Mobile Safari/537.36")
+
+
+def fetch_picture(url, size=200):
+    """Download a picture and keep a small copy (a data URI), so it shows on any phone and never breaks later.
+    "" if it isn't a real image."""
+    if not url or not str(url).startswith(("http", "data:image")):
+        return ""
+    if str(url).startswith("data:image"):
+        return url
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, "Accept": "image/*"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read(5_000_000)
+        img = Image.open(io.BytesIO(data))
+        if min(img.size) < 40:
+            return ""  # tracking pixels and icons
+        return thumbnail(data, size)
+    except Exception:
+        return ""
+
+
+def off_pictures(brand, name, limit=2):
+    """Front-of-pack photos from Open Food Facts for products with this brand and name."""
+    q = urllib.parse.quote(" ".join(x for x in [brand, name] if x))
+    try:
+        data = _get_json(f"https://search.openfoodfacts.org/search?q={q}&page_size=10&fields=product_name,brands,image_front_url")
+    except Exception:
+        return []
+    wanted = _words(name) - _words(brand)
+    out = []
+    for hit in data.get("hits", []):
+        brands = hit.get("brands") or []
+        brands = brands if isinstance(brands, list) else [brands]
+        brand_ok = not brand or any(_norm(brand) in _norm(b) or _norm(b) in _norm(brand) for b in brands if b)
+        if hit.get("image_front_url") and brand_ok and wanted & _words(hit.get("product_name", "")):
+            out.append(hit["image_front_url"])
+        if len(out) >= limit:
+            break
+    return out
 
 
 def picture_choices(model, product, item_name, store="", limit=3):
-    """Up to `limit` pictures that really load, best first: the barcode database's front photo, photos of the exact
-    product from the web, then a generic picture of the food. [(url, where it came from)]."""
+    """Up to `limit` real pictures, best first, each kept as a small copy so it never breaks: the barcode
+    database's photo, Open Food Facts photos by brand + name, the photos real product pages declare, then a
+    generic picture of the food. [(picture, where it came from)]."""
     out, seen = [], set()
 
     def add(url, label):
-        url = checked_image(url)
-        if url and url not in seen and len(out) < limit:
-            seen.add(url)
-            out.append((url, label))
+        if len(out) >= limit or not url or url in seen:
+            return
+        seen.add(url)
+        pic = fetch_picture(url)
+        if pic:
+            out.append((pic, label))
 
     if product.get("barcode"):
         try:
             add(off_by_barcode(product["barcode"]).get("photo_url"), "barcode database")
         except Exception:
             pass
+    brand, name = product.get("brand", ""), product.get("name", "")
+    for url in off_pictures(brand, name):
+        add(url, "Open Food Facts")
     if len(out) < limit:
         store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
                       else GENERAL_RULE)
-        query = " ".join(x for x in [product.get("brand", ""), product.get("name", "")] if x).strip()
+        query = name if brand.lower() in name.lower() else f"{brand} {name}".strip()
         try:
             found, sources = gemini.search_json("picture_search", model, PICTURE_PROMPT.format(query=query, store_rule=store_rule))
-            for url in (found.get("images") or [])[:6]:
-                add(url, "web")
-            for page in list(found.get("pages") or [])[:2] + [u for _, u in sources[:2]]:
+            pages = list(found.get("pages") or [])[:4] + [u for _, u in sources[:4]]
+            for page in pages:  # the photo a real page declares (og:image) beats a typed image link
                 if len(out) >= limit:
                     break
                 add(page_image(page), "product page")
+            for url in (found.get("images") or [])[:4]:
+                add(url, "web")
         except Exception:
             pass
     if len(out) < limit:

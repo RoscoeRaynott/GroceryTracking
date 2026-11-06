@@ -693,7 +693,8 @@ def remove_nickname(product_id, phrase):
 
 
 def set_photo(product_id, photo):
-    sheets.update_rows("products", "product_id", {product_id: {"photo_url": photo}})
+    """Keep the picture itself (a small copy) rather than a link that can break later."""
+    sheets.update_rows("products", "product_id", {product_id: {"photo_url": productinfo.fetch_picture(photo) or photo}})
 
 
 def products_prompt_lines(limit=80):
