@@ -57,24 +57,25 @@ def render():
     if view != "All":
         if not needs and not scanned:
             st.success("Everything has its info. 🎉")
-        _look_up_all(needs + [r for r in scanned if r not in needs])
+        lookable = _look_up_all(needs + [r for r in scanned if r not in needs])
     elif scanned:
-        _look_up_all(scanned, label="🔎 Look up scanned")
+        lookable = _look_up_all(scanned, label="🔎 Look up scanned")
+    else:
+        lookable = set()
     st.caption("Tap an item to see everything about it, fix it, mark it finished or say some went bad.")
     st.markdown(TILE_CSS, unsafe_allow_html=True)
 
     food = [r for r in shown if r["item"].get("kind", "Food") == "Food"]
     groups = [(f"{place}", [r for r in food if (r["item"].get("storage") or "Open air") == place]) for place in PLACES]
     groups.append(("🧴 Household", [r for r in shown if r["item"].get("kind", "Food") != "Food"]))
-    picking = view != "All"
     for title, here in groups:
         if not here:
             continue
         here.sort(key=lambda r: ({"red": 0, "orange": 1, "ok": 2}[r["level"]], -r["days_open"]))
         st.subheader(f"{title} · {len(here)}", anchor=False)
         with st.container(horizontal=True, gap="small", key=f"grid_{title.encode('ascii', 'ignore').decode().strip().replace(' ', '_') or 'household'}"):
-            for r in here:
-                _tile(r, picking)
+            for r in here:  # a tick box only on items a Look up button will act on
+                _tile(r, (r["product"] or {}).get("product_id") in lookable)
     item_info.show_if_open()
 
 
@@ -135,43 +136,59 @@ def _tile_html(r):
 
 
 def _look_up_all(needs, label="🔎 Look up all"):
-    """Look up every ticked item at once (up to 10 at a time), each the best way it can: its waiting photos,
-    else its barcode (scanned now or saved before), else its name. Each match waits on its tile (✅) and in its
-    panel for Yes / Not this; nothing is saved without you."""
+    """Look up every ticked item at once (up to 10 at a time), each the cheapest way that fills what's missing:
+    its waiting photos (read by the cheap label model), else its barcode (the free database first), else one
+    web search by name. Items a lookup can't help (only a photo, kept in or expiry missing; loose food, whose
+    nutrition comes from USDA) and items not found in the last 30 days are left out unless something new was
+    scanned for them. Each match waits on its tile (✅) and in its panel for Yes / Not this."""
     scans = st.session_state.get(item_info.SCANS, {})
-    todo, seen = [], set()
+    todo, seen, skipped, lookable = [], set(), {"nothing": 0, "missed": 0}, set()
     for r in needs:
         p = r["product"]
-        if p and p["product_id"] not in seen and r["item"].get("kind", "Food") != "One-time" \
-                and st.session_state.get(f"ni_pick_{p['product_id']}", True) \
-                and not st.session_state.get(f"ii_redo_{p['product_id']}"):
-            seen.add(p["product_id"])
+        if not p or p["product_id"] in seen or r["item"].get("kind", "Food") == "One-time" \
+                or st.session_state.get(f"ii_redo_{p['product_id']}"):
+            continue
+        seen.add(p["product_id"])
+        scanned = p["product_id"] in scans
+        r["lookup_needs"] = records.lookup_needs(p, r["item"])
+        if not scanned and not (r["lookup_needs"] - {"photo"}):
+            skipped["nothing"] += 1  # a photo alone: 🖼 in the item finds one from free sources first
+            continue
+        if not scanned and records.missed_recently(p):
+            skipped["missed"] += 1
+            continue
+        lookable.add(p["product_id"])
+        if st.session_state.get(f"ni_pick_{p['product_id']}", True):
             todo.append(r)
-    sharp = sum(1 for r in todo if r["product"]["product_id"] in scans or r["product"].get("barcode"))
-    with st.container(horizontal=True, vertical_alignment="center"):
-        go = st.button(f"{label} ({len(todo)})" + (f" · {sharp} by barcode/photo" if sharp else ""), key="ni_all",
-                       type="primary", disabled=not todo,
-                       help="Each item is looked up the best way it can: photo, then barcode, then name. "
+    free = sum(1 for r in todo if r["product"]["product_id"] in scans or r["product"].get("barcode"))
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        go = st.button(f"{label} ({len(todo)})", key="ni_all", type="primary", disabled=not todo,
+                       help="Each item is looked up the cheapest way: photo, then barcode, then name. "
                             "Up to 10 at once. Nothing is saved until you say Yes.")
-        if st.button("Tick all", key="ni_pick_all", type="tertiary"):
-            for r in needs:
-                if r["product"]:
-                    st.session_state[f"ni_pick_{r['product']['product_id']}"] = True
+        if st.button("Tick all", key="ni_tickall", icon=":material/check_box:"):
+            for pid in lookable:
+                st.session_state[f"ni_pick_{pid}"] = True
             st.rerun()
-        if st.button("Untick all", key="ni_pick_none", type="tertiary"):
-            for r in needs:
-                if r["product"]:
-                    st.session_state[f"ni_pick_{r['product']['product_id']}"] = False
+        if st.button("Untick all", key="ni_untickall", icon=":material/check_box_outline_blank:"):
+            for pid in lookable:
+                st.session_state[f"ni_pick_{pid}"] = False
             st.rerun()
+    notes = ([f"📷🔢 {free} by photo / barcode (cheapest)"] if free else []) + \
+            ([f"{skipped['nothing']} need only a photo or a date"] if skipped["nothing"] else []) + \
+            ([f"{skipped['missed']} not found in the last {records.MISS_DAYS} days (scan its barcode or label to retry)"]
+             if skipped["missed"] else [])
+    if notes:
+        st.caption(" · ".join(notes))
     if not go:
-        return
+        return lookable
     settings = sheets.get_settings()
     jobs = {}
     for r in todo:  # everything a lookup needs is gathered here, so the parallel lookups don't touch the session
         p = r["product"]
         q = scans.get(p["product_id"], {})
         jobs[p["product_id"]] = (records.product_search_text(p), p.get("pack_unit") or r["item"].get("unit") or "each",
-                                 records.lookup_store(p), q.get("barcode") or p.get("barcode", ""), tuple(q.get("photos", ())))
+                                 records.lookup_store(p), q.get("barcode") or p.get("barcode", ""), tuple(q.get("photos", ())),
+                                 frozenset(r["lookup_needs"]) or None)
     ways = [("📷" if args[4] else "🔢" if args[3] else "🔤") for args in jobs.values()]
     plan = " · ".join(f"{icon} {ways.count(icon)}" for icon in ("🔢", "📷", "🔤") if ways.count(icon))
     bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} looked up ({plan})")
@@ -187,6 +204,7 @@ def _look_up_all(needs, label="🔎 Look up all"):
                 found += 1
             except productinfo.NotFound as ex:
                 st.session_state[f"ii_redo_{pid}"] = {"missing": str(ex) if " " in str(ex) else "Not found."}
+                records.set_lookup_missed(pid)  # don't pay to search for it again for a while
                 missed += 1
             except Exception as ex:
                 st.session_state[f"ii_redo_{pid}"] = {"missing": f"Search failed: {ex}"}

@@ -332,7 +332,8 @@ def scan_lookup(product, item):
         st.session_state.get(_k(f"ii_q_{product['product_id']}", records.product_search_text(product)))
         or records.product_search_text(product),
         product.get("pack_unit") or item.get("unit") or "each", records.lookup_store(product),
-        queued.get("barcode") or product.get("barcode", ""), queued.get("photos", ()))
+        queued.get("barcode") or product.get("barcode", ""), queued.get("photos", ()),
+        records.lookup_needs(product, item) or None)
 
 
 def _differs(col, a, b):

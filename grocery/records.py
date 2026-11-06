@@ -488,6 +488,8 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
     if info.get("barcode") and not product.get("barcode"):
         change["barcode"] = info["barcode"]
     change.update(_brand_if_missing(product_id, info))
+    if product.get("lookup_missed_on"):
+        change["lookup_missed_on"] = ""  # found after all
     if change.get("ingredients") or change.get("nutrients_json"):
         change.update(info_status="confirmed", info_source=info.get("source", "Web search"), info_url=info.get("url", ""))
     elif info.get("url") and not product.get("info_url"):
@@ -522,8 +524,39 @@ def set_no_expiry(item_id, none):
 
 
 def set_barcode(product_id, barcode):
-    """A scanned barcode is a fact about the product: save it straight away (it survives an app reload)."""
-    sheets.update_rows("products", "product_id", {product_id: {"barcode": barcode}})
+    """A scanned barcode is a fact about the product: save it straight away (it survives an app reload).
+    It's a new way to find it, so an earlier "not found" no longer holds it back."""
+    sheets.update_rows("products", "product_id", {product_id: {"barcode": barcode, "lookup_missed_on": ""}})
+
+
+LOOKUP_NEEDS = {"photo": "photo", "brand": "brand", "pack size": "pack", "ingredients": "ingredients",
+                "nutrition": "nutrition"}
+MISS_DAYS = 30
+
+
+def lookup_needs(product, item):
+    """What a lookup could still fill for this product: photo, brand, pack, ingredients, nutrition.
+    Loose food gets its nutrition from USDA (free), so that's never searched for."""
+    checks = completeness(product, item, {})
+    packaged = bool(product) and product.get("packaged") != "no"
+    return {LOOKUP_NEEDS[what] for what, ok in checks
+            if not ok and what in LOOKUP_NEEDS and (packaged or what != "nutrition")}
+
+
+def set_lookup_missed(product_id, missed=True):
+    """Remember that Look up all found nothing today (or clear it after a find)."""
+    sheets.update_rows("products", "product_id",
+                       {product_id: {"lookup_missed_on": timeutil.now().date().isoformat() if missed else ""}})
+
+
+def missed_recently(product):
+    """True for 30 days after Look up all found nothing for it."""
+    import datetime as dt
+    try:
+        day = dt.date.fromisoformat(product.get("lookup_missed_on") or "")
+    except ValueError:
+        return False
+    return (timeutil.now().date() - day).days < MISS_DAYS
 
 
 def set_bought(batch_id, units, packs=None):

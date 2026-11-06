@@ -21,6 +21,7 @@ TABS = {
         "piece_grams",  # typical weight of one piece for items counted in "each" (USDA: medium banana = 118 g)
         "pack_varies",  # "yes": sold by weight, each pack differs (salmon, chicken); each purchase records its own weight
         "no_brand",  # "yes": it has no brand (loose avocados)
+        "lookup_missed_on",  # date Look up all last found nothing; it skips the product for 30 days
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [
