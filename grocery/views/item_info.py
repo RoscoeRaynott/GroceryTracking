@@ -73,66 +73,81 @@ def _panel(bid):
         return
     item = next((i for i in records.items() if i["item_id"] == batch.get("item_id")), {})
     product = next((p for p in records.products() if p["product_id"] == batch.get("product_id")), None)
-    # Header: picture, names, and how complete its profile is (green chips known, gray still missing)
-    with st.container(horizontal=True, vertical_alignment="center"):
-        _picture(product, item)
+    pid = product["product_id"] if product else None
+    # Header: picture (🔍 zoom, 🖼 new picture), names, ✏️ fix them
+    st.markdown(HEADER_CSS, unsafe_allow_html=True)
+    with st.container(horizontal=True, vertical_alignment="center", gap="small", key="ii_head"):
+        product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
         brand = f"  \n:gray[{product.get('brand')}]" if product and product.get("brand") else ""
-        st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}")
-        if product:
-            _edit_names(product)
-    _quick_actions(batch)
+        st.markdown(f"**{product['name'] if product else item.get('name', '')}**{brand}", width="stretch")
+        with st.container(gap=None, width="content"):  # 🔍 big picture · 🖼 new picture · ✏️ fix the names
+            _picture_tools(product, item)
+            if product:
+                _edit_names(product)
+    found = st.session_state.get(f"ii_redo_{pid}") if pid else None
+    if found is not None:  # a lookup result waiting for Yes / Not this goes right under the header
+        _lookup_result(product, item, found)
+
+    # How complete: the bar, what's still missing, and a count of what's done
     checks = records.completeness(product, item, batch)
-    st.markdown(profile_bar(checks) + "  \n" + " ".join(
-        f":green-badge[✓ {what}]" if ok else f":gray-badge[{what}?]" for what, ok in checks))
+    done = sum(1 for _, ok in checks if ok)
+    st.markdown(profile_bar(checks) + " " + " ".join(f":gray-badge[{what}?]" for what, ok in checks if not ok)
+                + (f" :green-badge[✓ {done}]" if done else ""))
 
-    if product:
-        _find_info(product, item)
+    # Actions: Finished · Some went bad · 📷 Scan · 🔎 Look up
+    _quick_actions(batch, product, item, found is None)
 
-    # At a glance
+    # Everything at a glance in one row; tap a chip to change it
     days = _days_open(batch)
-    facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]",
-             f":gray-badge[⏱ {days}d open]"]
+    facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]"]
     if batch.get("price_paid"):
-        facts.insert(1, f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
-    st.markdown(" ".join(facts))
-
-    # Kept in · expires · pack: one compact row; tap a chip to change it
-    with st.container(horizontal=True, gap="small"):
+        facts.append(f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
+    facts.append(f":gray-badge[⏱ {days}d open]")
+    with st.container(horizontal=True, gap="small", vertical_alignment="center"):
+        st.markdown(" ".join(facts), width="content")
         _kept(item)
         if item.get("perishable") == "yes":  # only things that go bad need an expiry date (same rule as the bar)
             _expiry(batch, item)
         _bought(batch, product)
         if product:
             _pack(product, item)
-    if product:
-        if item.get("kind", "Food") == "Food":  # only food has ingredients and Nutrition Facts to track
-            _ingredients(product, item)
-            _nutrition(product)
-            if st.session_state.get(f"ii_cam_{product['product_id']}"):
-                st.markdown("**📸 Label photos** :gray[ingredients and/or nutrition panel; saving only adds what it read]")
-                product_ui.label_photo(product, f"ii_lab_{product['product_id']}", inline=True)
-        _names(product)
-    else:
+    if not product:
         st.caption("Loose item: no package details to fill in.")
+        return
+    food = item.get("kind", "Food") == "Food"  # only food has ingredients and Nutrition Facts to track
+    names = (["🧾 Ingredients", "📊 Nutrition"] if food else []) + ["🏷 Nicknames"]
+    tabs = dict(zip(names, st.tabs(names, key=f"ii_tabs_{pid}")))
+    if food:
+        with tabs["🧾 Ingredients"]:
+            _ingredients(product, item)
+        with tabs["📊 Nutrition"]:
+            _nutrition(product)
+    with tabs["🏷 Nicknames"]:
+        _names(product)
 
 
+# The header stays one row on a phone: picture | name (wraps inside its space) | small 🔍 🖼 ✏️ buttons.
+HEADER_CSS = """<style>
+.st-key-ii_head { flex-wrap: nowrap !important; }
+.st-key-ii_head > div:first-child { flex: 0 0 auto !important; width: auto !important; }
+.st-key-ii_head > div:nth-child(2) { flex: 1 1 0 !important; min-width: 0 !important; }
+.st-key-ii_head [data-testid="stPopover"] button { padding: 2px 6px; min-height: 32px; }
+</style>"""
 FIELD_NAMES = {"photo_url": "photo", "serving_size": "serving size", "servings_per_pack": "servings",
                "ingredients": "ingredients", "nutrients_json": "nutrition", "abv": "ABV", "barcode": "barcode",
                "info_url": "page link", "pack size": "pack size"}
 
 
-def _picture(product, item):
-    """The picture; 🔍 shows it big, 🖼 finds a new one (choose from up to 3)."""
-    product_ui.photo(product, item.get("emoji", ""), width=72, item=item)
+def _picture_tools(product, item):
+    """🔍 shows the picture big, 🖼 finds a new one (choose from up to 3)."""
     tag = f"{item.get('item_id')}_{(product or {}).get('product_id', '')}"
     url = (product or {}).get("photo_url") or (item.get("photo_url") if item.get("photo_url") not in ("", "none") else "")
-    with st.container(gap=None):
-        if url:
-            with st.popover("", icon=":material/zoom_in:", key=f"ii_zoom_{tag}"):
-                st.image(url, width="stretch")
-        if product:
-            with st.popover("", icon=":material/image_search:", key=f"ii_pics_{tag}", help="Find a picture"):
-                _picture_choices(product, item)
+    if url:
+        with st.popover("", icon=":material/zoom_in:", key=f"ii_zoom_{tag}"):
+            st.image(url, width="stretch")
+    if product:
+        with st.popover("", icon=":material/image_search:", key=f"ii_pics_{tag}", help="Find a picture"):
+            _picture_choices(product, item)
 
 
 def _picture_choices(product, item):
@@ -165,58 +180,68 @@ def _picture_choices(product, item):
         _refresh()
 
 
-def _find_info(product, item):
-    """Find what's missing: search (the store's own site for chain / store-brand products, else anywhere),
-    or scan the barcode or label. A match is previewed and fills only what's empty."""
+def _find_tools(product, item):
+    """📷 Scan and 🔎 Look up (✏️ fixes the search words). Search uses the store's own site for chain /
+    store-brand products, else anywhere; a match is previewed under the header and fills only what's empty."""
     store = records.lookup_store(product)
     pid = product["product_id"]
     key = f"ii_redo_{pid}"
-    found = st.session_state.get(key)
-    if found is None:
-        unit = product.get("pack_unit") or item.get("unit") or "each"
-        label = f"🔎 Redo search on {store}'s site" if store else "🔎 Look it up online"
-        with st.container(horizontal=True, gap="small"):
-            go_search = st.button(label, key=f"{key}_go", type="secondary",
-                                  help="Search the web and fill in what's missing")
-            with st.popover("", icon=":material/edit_note:", key=f"{key}_words", help="Search words"):
-                st.text_area("Search for", value=records.product_search_text(product), key=_k(f"ii_q_{pid}", records.product_search_text(product)),
-                             help="Fix or add words to make the search exact")
-            with st.popover("📷 Scan", key=f"{key}_scan", help="Scan the barcode, or photograph the label"):
-                got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
-                st.caption("Point at the barcode, or photograph the front (name) or the label. It's saved for "
-                           "🔎 Look up all, so you can go straight to the next item.")
-        if go_search:
-            with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
-                st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
-                    sheets.get_settings()["model_lookup"], st.session_state.get(_k(f"ii_q_{pid}", records.product_search_text(product)))
-                    or records.product_search_text(product), unit, store=store))
-            _refresh()
-        # Scanning only saves what was scanned; the lookups run later, all together (Pantry: 🔎 Look up all).
-        if got:
-            queue = st.session_state.setdefault(SCANS, {}).setdefault(pid, {"photos": []})
-            if got[0] == "barcode":
-                records.set_barcode(pid, got[1])
-                queue["barcode"] = got[1]
-                st.toast("Barcode saved · look it up later with 🔎 Look up all")
-            else:
-                queue["photos"].append(got[1]["data"])
-                st.toast(f"Photo saved ({len(queue['photos'])}) · look it up later with 🔎 Look up all")
-            _refresh()
-        queued = st.session_state.get(SCANS, {}).get(pid)
-        if queued:
-            bits = ([f"barcode {queued['barcode']}"] if queued.get("barcode") else []) + \
-                   ([f"{len(queued['photos'])} photo{'s' if len(queued['photos']) != 1 else ''}"] if queued.get("photos") else [])
-            st.markdown(f":blue-badge[📷 waiting: {' · '.join(bits)}] :gray[looked up with 🔎 Look up all]")
-            with st.container(horizontal=True):
-                if st.button("Look up now", key=f"{key}_now", type="primary"):
-                    with st.spinner("Looking it up…"):
-                        st.session_state[key] = _lookup(lambda: scan_lookup(product, item))
-                    st.session_state[SCANS].pop(pid, None)
-                    _refresh()
-                if st.button("Clear", key=f"{key}_clear", type="tertiary"):
-                    st.session_state[SCANS].pop(pid, None)
-                    _refresh()
+    unit = product.get("pack_unit") or item.get("unit") or "each"
+    with st.popover("Scan", icon=":material/photo_camera:", key=f"{key}_scan",
+                    help="Scan the barcode, or photograph the front or the label"):
+        got = camera.scan(f"ii_scan_{pid}", "Scan barcode or label")
+        st.caption("Point at the barcode, or photograph the front (name), the ingredients or the nutrition panel. "
+                   "It's saved for 🔎 Look up all, so you can go straight to the next item.")
+    go_search = st.button(f"Look up on {store}" if store else "Look up", key=f"{key}_go", icon=":material/search:",
+                          help=f"Search {store + chr(39) + 's site' if store else 'the web'} and fill in what's missing")
+    with st.popover("", icon=":material/edit_note:", key=f"{key}_words", help="Search words"):
+        st.text_area("Search for", value=records.product_search_text(product), key=_k(f"ii_q_{pid}", records.product_search_text(product)),
+                     help="Fix or add words to make the search exact")
+    if go_search:
+        with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
+            st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
+                sheets.get_settings()["model_lookup"], st.session_state.get(_k(f"ii_q_{pid}", records.product_search_text(product)))
+                or records.product_search_text(product), unit, store=store))
+        _refresh()
+    # Scanning only saves what was scanned; the lookups run later, all together (Pantry: 🔎 Look up all).
+    if got:
+        queue = st.session_state.setdefault(SCANS, {}).setdefault(pid, {"photos": []})
+        if got[0] == "barcode":
+            records.set_barcode(pid, got[1])
+            queue["barcode"] = got[1]
+            st.toast("Barcode saved · look it up later with 🔎 Look up all")
+        else:
+            queue["photos"].append(got[1]["data"])
+            st.toast(f"Photo saved ({len(queue['photos'])}) · look it up later with 🔎 Look up all")
+        _refresh()
+
+
+def _scan_waiting(product, item):
+    """What was scanned for this item and not looked up yet, with Look up now / Clear."""
+    pid = product["product_id"]
+    key = f"ii_redo_{pid}"
+    queued = st.session_state.get(SCANS, {}).get(pid)
+    if not queued:
         return
+    bits = ([f"barcode {queued['barcode']}"] if queued.get("barcode") else []) + \
+           ([f"{len(queued['photos'])} photo{'s' if len(queued['photos']) != 1 else ''}"] if queued.get("photos") else [])
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.markdown(f":blue-badge[📷 waiting: {' · '.join(bits)}]", width="content")
+        if st.button("Look up now", key=f"{key}_now", type="primary"):
+            with st.spinner("Looking it up…"):
+                st.session_state[key] = _lookup(lambda: scan_lookup(product, item))
+            st.session_state[SCANS].pop(pid, None)
+            _refresh()
+        if st.button("Clear", key=f"{key}_clear", type="tertiary"):
+            st.session_state[SCANS].pop(pid, None)
+            _refresh()
+
+
+def _lookup_result(product, item, found):
+    """A found match: what it would fill or change, then Yes, use it / Not this. Nothing is saved without you."""
+    store = records.lookup_store(product)
+    pid = product["product_id"]
+    key = f"ii_redo_{pid}"
     with st.container(border=True):
         if found.get("missing"):
             st.warning(f"Not found{f' on {store}' + chr(39) + 's site' if store else ''}. {found['missing']}")
@@ -374,13 +399,13 @@ def _bought(batch, product):
             _refresh()
 
 
-def _quick_actions(batch):
-    """Finished / Some went bad (they used to sit on each Pantry card), plus why it's flagged, if it is."""
+def _quick_actions(batch, product, item, can_look_up):
+    """Finished · Some went bad · 📷 Scan · 🔎 Look up in one row, plus why it's flagged, if it is."""
     bid = batch["batch_id"]
     row = next((r for r in analytics.pantry() if r["batch"]["batch_id"] == bid), None)
     if row and row["reason"]:
         st.markdown(f":{'red' if row['level'] == 'red' else 'orange'}-badge[⚠️ {row['reason']}]")
-    with st.container(horizontal=True):
+    with st.container(horizontal=True, gap="small"):
         if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
             events.apply([{"type": "finish", "batch": batch}], said="Pantry: Finished", source="pantry")
             st.toast(f"{batch['item']} finished · Undo in History")
@@ -388,6 +413,10 @@ def _quick_actions(batch):
             st.rerun()  # the item leaves the Pantry, so close the panel and redraw the page
         with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
             _went_bad(batch)
+        if product and can_look_up:
+            _find_tools(product, item)
+    if product and can_look_up:
+        _scan_waiting(product, item)
 
 
 def _went_bad(b):
@@ -428,10 +457,6 @@ def _days_open(batch):
     from grocery import analytics, timeutil
     bought = analytics._date(batch.get("purchased_on"))
     return (timeutil.now().date() - bought).days if bought else 0
-
-
-def _section(title):
-    st.markdown(f"**{title}**")
 
 
 def _kept(item):
@@ -538,40 +563,29 @@ def _pack(product, item):
             _refresh()
 
 
-def _tools(pid, kind):
-    """Small 🎤 / 📸 buttons next to a section; returns which one is open."""
-    key = f"ii_mode_{pid}_{kind}"
-    with st.container(horizontal=True):
-        if kind == "ing" and st.button("", key=f"{key}_mic", icon=":material/mic:", help="Say the ingredients"):
-            st.session_state[key] = None if st.session_state.get(key) == "mic" else "mic"
-        if st.button("", key=f"{key}_cam", icon=":material/photo_camera:", help="Photograph the label"):
-            cam = f"ii_cam_{pid}"  # one label camera for both sections, so photos and readings add up
-            st.session_state[cam] = not st.session_state.get(cam)
-    return st.session_state.get(key)
-
-
 def _ingredients(product, item):
     pid = product["product_id"]
-    with st.container(border=True):
-        with st.container(horizontal=True, vertical_alignment="center"):
-            _section("🧾 Ingredients")
-            mode = _tools(pid, "ing")
-        text = product.get("ingredients", "")
-        if text:
-            parts = [x.strip().replace("[", "(").replace("]", ")") for x in text.split(",") if x.strip()]
-            st.markdown(" ".join(f":gray-badge[{x[:40]}]" for x in parts[:40]))
-        elif product.get("info_status") == "none":
-            st.caption("No label to read.")
-        else:
-            st.markdown(":orange-badge[missing] :gray[tap 🎤 to read it out, or 📸 to photograph it]")
+    mic = f"ii_mic_{pid}"
+    text = product.get("ingredients", "")
+    if text:
+        parts = [x.strip().replace("[", "(").replace("]", ")") for x in text.split(",") if x.strip()]
+        st.markdown(" ".join(f":gray-badge[{x[:40]}]" for x in parts[:40]))
+    elif product.get("info_status") == "none":
+        st.caption("No label to read.")
+    else:
+        st.markdown(":orange-badge[missing] :gray[read it out with 🎤, or 📷 Scan the label]")
+    with st.container(horizontal=True, gap="small"):
+        if st.button("Say them", key=f"{mic}_btn", icon=":material/mic:", type="tertiary", help="Read the ingredients out loud"):
+            st.session_state[mic] = not st.session_state.get(mic)
+        if not text and product.get("info_status") != "none":
             single = (item.get("name") or product["name"]).strip()
             if st.button(f"🌿 Single ingredient: {single}", key=f"ii_single_{pid}", type="tertiary",
                          help="For rice, turmeric powder and the like: the ingredient is the product itself"):
                 records.save_ingredients(pid, single, source="Single ingredient")
                 st.toast(f"Ingredients: {single}")
                 _refresh()
-        if mode == "mic":
-            _say_ingredients(product)
+    if st.session_state.get(mic):
+        _say_ingredients(product)
 
 
 def _say_ingredients(product):
@@ -594,7 +608,7 @@ def _say_ingredients(product):
         if heard and st.button("Save", key=f"ii_hs_{pid}", type="primary"):
             records.save_ingredients(pid, heard)
             st.session_state.pop(heard_key, None)
-            st.session_state.pop(f"ii_mode_{pid}_ing", None)
+            st.session_state.pop(f"ii_mic_{pid}", None)
             st.toast("Ingredients saved")
             _refresh()
         if st.button("Try again", key=f"ii_hr_{pid}"):
@@ -608,55 +622,51 @@ def _nutrition(product):
         per = json.loads(product.get("nutrients_json") or "{}").get("per_serving", {})
     except ValueError:
         per = {}
-    with st.container(border=True):
+    rows = [{"nutrient": k.replace("_", " "), "dv": v["dv"]} for k, v in per.items()
+            if isinstance(v, dict) and v.get("dv") is not None]
+    if rows:
+        if product.get("serving_size"):
+            st.caption(f"% daily value per serving: {product['serving_size']}")
+        df = pd.DataFrame(rows)
+        # FDA rule of thumb: 5% or less is low, 20% or more is high.
+        df["level"] = pd.cut(df["dv"], [-1, 5, 19.999, 10_000], labels=["low", "medium", "high"])
+        base = alt.Chart(df).encode(
+            y=alt.Y("nutrient:N", sort=list(df.sort_values("dv", ascending=False)["nutrient"]), title=None, axis=alt.Axis(labelOverlap=False, labelLimit=140)))
+        bars = base.mark_bar(cornerRadiusEnd=4).encode(
+            x=alt.X("dv:Q", title=None, axis=None),
+            color=alt.Color("level:N", scale=alt.Scale(domain=["low", "medium", "high"],
+                                                       range=["#2ECC71", "#F39C12", "#E74C3C"]), legend=None),
+            tooltip=["nutrient", "dv"])
+        labels = base.mark_text(align="left", dx=4, color="#9AA0A6").encode(
+            x="dv:Q", text=alt.Text("dv:Q", format=".0f"))
+        st.altair_chart((bars + labels).properties(height=30 * len(rows)), width="stretch")
+        st.caption("🟢 low (5% or less) · 🟠 medium · 🔴 high (20% or more)")
+        if str(product.get("info_source", "")).startswith("USDA"):
+            piece = records._float(product.get("piece_grams"))
+            st.caption(f"📚 Typical values from USDA ({product['info_source'].split(': ', 1)[-1]}), per 100 g"
+                       + (f" · 1 piece ≈ {piece:g} g" if piece else ""))
+    elif product.get("nutrition_status") == records.NO_NUTRITION:
         with st.container(horizontal=True, vertical_alignment="center"):
-            _section("📊 Nutrition · % daily value")
-            _tools(pid, "nut")
-        rows = [{"nutrient": k.replace("_", " "), "dv": v["dv"]} for k, v in per.items()
-                if isinstance(v, dict) and v.get("dv") is not None]
-        if rows:
-            if product.get("serving_size"):
-                st.caption(f"Per serving: {product['serving_size']}")
-            df = pd.DataFrame(rows)
-            # FDA rule of thumb: 5% or less is low, 20% or more is high.
-            df["level"] = pd.cut(df["dv"], [-1, 5, 19.999, 10_000], labels=["low", "medium", "high"])
-            base = alt.Chart(df).encode(
-                y=alt.Y("nutrient:N", sort=list(df.sort_values("dv", ascending=False)["nutrient"]), title=None, axis=alt.Axis(labelOverlap=False, labelLimit=140)))
-            bars = base.mark_bar(cornerRadiusEnd=4).encode(
-                x=alt.X("dv:Q", title=None, axis=None),
-                color=alt.Color("level:N", scale=alt.Scale(domain=["low", "medium", "high"],
-                                                           range=["#2ECC71", "#F39C12", "#E74C3C"]), legend=None),
-                tooltip=["nutrient", "dv"])
-            labels = base.mark_text(align="left", dx=4, color="#9AA0A6").encode(
-                x="dv:Q", text=alt.Text("dv:Q", format=".0f"))
-            st.altair_chart((bars + labels).properties(height=30 * len(rows)), width="stretch")
-            st.caption("🟢 low (5% or less) · 🟠 medium · 🔴 high (20% or more)")
-            if str(product.get("info_source", "")).startswith("USDA"):
-                piece = records._float(product.get("piece_grams"))
-                st.caption(f"📚 Typical values from USDA ({product['info_source'].split(': ', 1)[-1]}), per 100 g"
-                           + (f" · 1 piece ≈ {piece:g} g" if piece else ""))
-        elif product.get("nutrition_status") == records.NO_NUTRITION:
-            with st.container(horizontal=True, vertical_alignment="center"):
-                st.caption("You chose: no nutrition.")
-                if st.button("Undo", key=f"ii_nonut_undo_{pid}", type="tertiary"):
-                    records.sheets.update_rows("products", "product_id", {pid: {"nutrition_status": ""}})
-                    _refresh()
-        else:
-            st.markdown(":orange-badge[missing] :gray[📸 photograph the panel, use typical values, or say there's none]")
-        # Two clear choices: typical USDA values, or no nutrition. Either one counts as done.
-        if not rows and product.get("nutrition_status") != records.NO_NUTRITION:
-            if st.session_state.get(f"ii_usda_{pid}") is not None:
-                _typical(product)  # the match picker is open: give it the full width
-                return
-            with st.container(horizontal=True):
-                _typical(product)
-                if st.button("🚫 No nutrition", key=f"ii_nonut_{pid}", type="tertiary",
-                             help="You've seen the typical values option and don't want nutrition for this"):
-                    records.mark_no_nutrition(pid)
-                    st.toast("Marked: no nutrition")
-                    _refresh()
-        elif str(product.get("info_source", "")).startswith("USDA"):
-            _typical(product)  # change the typical match
+            st.caption("You chose: no nutrition.")
+            if st.button("Undo", key=f"ii_nonut_undo_{pid}", type="tertiary"):
+                records.sheets.update_rows("products", "product_id", {pid: {"nutrition_status": ""}})
+                _refresh()
+    else:
+        st.markdown(":orange-badge[missing] :gray[📷 Scan the panel, use typical values, or say there's none]")
+    # Two clear choices: typical USDA values, or no nutrition. Either one counts as done.
+    if not rows and product.get("nutrition_status") != records.NO_NUTRITION:
+        if st.session_state.get(f"ii_usda_{pid}") is not None:
+            _typical(product)  # the match picker is open: give it the full width
+            return
+        with st.container(horizontal=True):
+            _typical(product)
+            if st.button("🚫 No nutrition", key=f"ii_nonut_{pid}", type="tertiary",
+                         help="You've seen the typical values option and don't want nutrition for this"):
+                records.mark_no_nutrition(pid)
+                st.toast("Marked: no nutrition")
+                _refresh()
+    elif str(product.get("info_source", "")).startswith("USDA"):
+        _typical(product)  # change the typical match
 
 
 def _typical(product):
@@ -747,9 +757,7 @@ def _edit_names(product):
 
 def _names(product):
     pid = product["product_id"]
-    busy = st.session_state.get(f"ii_nick_{pid}_open") or st.session_state.get(f"ii_nick_{pid}_heard") is not None
-    with st.expander("🏷 Nicknames", expanded=bool(busy)):
-        product_ui.nicknames(product, f"ii_nick_{pid}")
-        if product.get("barcode") or product.get("info_url"):
-            link = f" · [page]({product['info_url']})" if product.get("info_url") else ""
-            st.caption(f"Barcode {product.get('barcode') or '—'}{link}")
+    product_ui.nicknames(product, f"ii_nick_{pid}")
+    if product.get("barcode") or product.get("info_url"):
+        link = f" · [page]({product['info_url']})" if product.get("info_url") else ""
+        st.caption(f"Barcode {product.get('barcode') or '—'}{link}")

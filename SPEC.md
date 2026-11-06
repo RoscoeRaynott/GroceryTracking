@@ -435,15 +435,17 @@ _Status: gathering requirements. No code until the plan is approved._
 - **Pack words (decided):** 📦 **pack** = what the store sells as one thing = **Items in one pack** × **Size of one item**. 🛒 **bought** = **Packs bought** × one pack (or just the amount when there's no pack size), editable anytime in the item panel. The review card says "Packs bought".
 - **Pantry is a photo grid (decided, option A):** three tiles per row on a phone. Each tile has the photo (or emoji), a short name (tap to open the item panel), a colored days badge (⚠️ when flagged) and a 5-segment completion bar. **Finished** and **Some went bad** live in the item panel (top), along with why it's flagged. The "Remember something?" voice box is a one-line expander, open while an update waits for approval. Freezer / Fridge / Open air groups stay.
 - **Pantry item panel (built):** tap an item's name in Pantry to open a **side drawer** (Streamlit dialog, `position="right"`). Tapping outside or ✕ closes it; it stays open while you save things.
-  - Header: photo, product name, brand, and a completeness badge (✅ info complete / 📏 pack size? / 🧾 ingredients?). Pantry cards show the same badge.
-  - At-a-glance badges: bought date and store, price, amount (e.g. "1 lb 6 oz"), days open, expiry.
-  - **Compact row of tap-to-edit chips** (decided): `❄️ Fridge · perishable` (kept in + perishable, saved on the item for every future purchase), `⏳ no expiry` / `⏳ exp Nov 10` (this purchase), `📦 2 × 32 oz` (pack size). Tapping a chip opens its small editor; the big boxes are gone.
-  - **Expiry** for this purchase (an undoable event).
-  - **One pack** size, with lb + oz or gal + fl oz boxes.
-  - **Ingredients** as chips, with small 🎤 (read them out; the AI writes the list, you confirm) and 📸 (label camera) buttons, always there so info can be replaced.
-  - **Nutrition** as a %DV bar chart, highest first: 🟢 ≤5% low, 🟠 medium, 🔴 ≥20% high (FDA rule of thumb), with a 📸 button.
-  - **Name and brand** are shown once, at the top beside the photo, with a small ✏️ to edit them. A **🏷 Nicknames** box sits at the bottom, with the barcode and page link.
-- **Profile completion bar (built):** every Pantry card and the item panel show a bar like a website's profile completion, e.g. ▰▰▰▰▰▱▱▱▱▱ 50%: red under 40%, orange under 80%, green from 80%. The panel lists each field as a chip, green ✓ when known and gray when missing.
+  - **Decluttered layout (decided, built):** nothing removed, only regrouped. Top to bottom:
+    1. **Header, one row:** picture · name + brand · small 🔍 (big picture) / 🖼 (choose a picture) / ✏️ (name, brand, no brand, own item).
+    2. **A lookup result**, when one waits for Yes / Not this, sits right under the header.
+    3. **Completion bar** with only the **missing** fields as gray chips, plus one green **✓ N** for what's done.
+    4. **Actions, one row:** Finished · Some went bad · 📷 Scan · 🔎 Look up (on <store> for chain / store-brand products) · ✏️ search words. What's scanned and waiting shows below with Look up now / Clear. Why it's flagged (⚠️) sits above.
+    5. **One chip row:** 🗓 date · store, 💲 price, ⏱ days open (badges), then tap-to-edit chips ❄️ kept in · ⏳ expiry (perishables) · 🛒 bought · 📦 pack.
+    6. **Tabs:** 🧾 Ingredients (chips, 🎤 Say them, 🌿 Single ingredient) | 📊 Nutrition (%DV chart, 📚 USDA typical, 🚫 No nutrition) | 🏷 Nicknames (with barcode and page link). Household / One-time items show only Nicknames.
+  - **One camera (decided):** the separate 📸 label cameras under Ingredients and Nutrition are gone; **📷 Scan** reads a barcode, the front, or the ingredients / nutrition panel.
+  - **Nutrition** chart: highest first, 🟢 ≤5% low, 🟠 medium, 🔴 ≥20% high (FDA rule of thumb).
+  - A lookup that also renames the product keeps the brand it just filled (fixed: the rename used to blank it).
+- **Profile completion bar (built):** every Pantry card and the item panel show a bar like a website's profile completion, e.g. ▰▰▰▰▰▱▱▱▱▱ 50%: red under 40%, orange under 80%, green from 80%. The panel shows the missing fields as gray chips and a single green ✓ count for the rest.
   - **Packaged products:** photo, kept in, brand, pack size, ingredients, nutrition (barcode and nicknames do **not** count; nicknames were dropped at the user's request) (so voice understands it next time), plus expiry for perishables.
   - **Loose items:** photo, kept in, plus expiry for perishables.
   - **🌿 Single ingredient** (next to Ingredients when missing): saves the product itself as the only ingredient (e.g. "Turmeric powder") and counts as done.
