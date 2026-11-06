@@ -116,7 +116,13 @@ def _tile_html(r):
     warn = "⚠️ " if r["level"] == "red" else ""
     pid = b.get("product_id")
     found = st.session_state.get(f"ii_redo_{pid}") if pid else None
-    ready = "✅ " if found and not found.get("missing") else "📷 " if pid in st.session_state.get(item_info.SCANS, {}) else ""
+    queued = st.session_state.get(item_info.SCANS, {}).get(pid)
+    if found and not found.get("missing"):
+        ready = "✅" + item_info.VIA.get(found.get("via"), "") + " "  # found, and how
+    elif queued:
+        ready = ("📷" if queued.get("photos") else "") + ("🔢" if queued.get("barcode") else "") + " "  # waiting
+    else:
+        ready = ""
     checks = r["checks"]
     pct = round(100 * sum(1 for _, ok in checks if ok) / len(checks)) if checks else 0
     bar_color = COLORS["red" if pct < 40 else "orange" if pct < 80 else "green"][1]
@@ -166,7 +172,9 @@ def _look_up_all(needs, label="🔎 Look up all"):
         q = scans.get(p["product_id"], {})
         jobs[p["product_id"]] = (records.product_search_text(p), p.get("pack_unit") or r["item"].get("unit") or "each",
                                  records.lookup_store(p), q.get("barcode") or p.get("barcode", ""), tuple(q.get("photos", ())))
-    bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} looked up")
+    ways = [("📷" if args[4] else "🔢" if args[3] else "🔤") for args in jobs.values()]
+    plan = " · ".join(f"{icon} {ways.count(icon)}" for icon in ("🔢", "📷", "🔤") if ways.count(icon))
+    bar = st.progress(0.0, text=f"🔎 0 of {len(jobs)} looked up ({plan})")
     ctx = get_script_run_ctx()
     found = missed = 0
     with ThreadPoolExecutor(max_workers=MAX_AT_ONCE, initializer=lambda: add_script_run_ctx(ctx=ctx)) as pool:
@@ -184,6 +192,6 @@ def _look_up_all(needs, label="🔎 Look up all"):
                 st.session_state[f"ii_redo_{pid}"] = {"missing": f"Search failed: {ex}"}
                 missed += 1
             scans.pop(pid, None)  # its photos have been read; the barcode is already saved on the product
-            bar.progress(n / len(jobs), text=f"🔎 {n} of {len(jobs)} looked up · ✅ {found} found · ⚠️ {missed} not found")
+            bar.progress(n / len(jobs), text=f"🔎 {n} of {len(jobs)} looked up ({plan}) · ✅ {found} found · ⚠️ {missed} not found")
     st.toast(f"✅ {found} found — tap each ✅ item to check and save")
     st.rerun()

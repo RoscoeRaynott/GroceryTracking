@@ -255,7 +255,8 @@ def web_lookup(model, query, unit="each", barcode="", store=""):
     info["pack_units"] = pack if pack and pack > 0 else None
     info["pack_count"] = count if count and count >= 1 else None
     info["pack_unit"] = unit
-    return info
+    info.setdefault("via", "barcode" if barcode else "name")
+    return fill_pack_from_text(info, unit)
 
 
 def read_label(model, jpegs):
@@ -527,7 +528,77 @@ def best_lookup(model, label_model, query, unit="each", store="", barcode="", ph
         found = read_label(label_model, list(photos))
         if barcode and not found.get("barcode"):
             found["barcode"] = barcode
-        return identify_then_search(model, found, unit, store)
-    if barcode:
-        return identify_then_search(model, by_barcode(model, barcode, query, unit, store), unit, store)
-    return web_lookup(model, query, unit, store=store)
+        result, via = identify_then_search(model, found, unit, store), "photo"
+    elif barcode:
+        result, via = identify_then_search(model, by_barcode(model, barcode, query, unit, store), unit, store), "barcode"
+    else:
+        result, via = web_lookup(model, query, unit, store=store), "name"
+    result["via"] = via  # shown on the tile and in the preview: how this item was found
+    return fill_pack_from_text(result, unit)
+
+
+# ---------------------------------------------------------------- sizes written in names ("22 oz", "2 x 32 oz")
+
+# How many of a base unit are in one of each unit: weights in oz, volumes in fl oz.
+UNIT_FACTORS = {"oz": ("weight", 1.0), "lb": ("weight", 16.0), "g": ("weight", 1 / 28.3495), "kg": ("weight", 1000 / 28.3495),
+                "fl oz": ("volume", 1.0), "qt": ("volume", 32.0), "gal": ("volume", 128.0), "ml": ("volume", 1 / 29.5735),
+                "l": ("volume", 1000 / 29.5735)}
+
+
+def convert(amount, from_unit, to_unit):
+    """Amount in from_unit expressed in to_unit, or None when they can't be converted (e.g. each -> fl oz)."""
+    if from_unit == to_unit:
+        return amount
+    a, b = UNIT_FACTORS.get(from_unit), UNIT_FACTORS.get(to_unit)
+    if amount is None or not a or not b or a[0] != b[0]:
+        return None
+    return amount * a[1] / b[1]
+
+
+_UNIT = r"(fl\.?\s*oz|oz|lbs?|kg|g|ml|l|gal|qt)\b"
+_MULTI = re.compile(r"(\d+)\s*(?:x|×)\s*(\d+(?:\.\d+)?)\s*-?\s*" + _UNIT, re.I)
+_SINGLE = re.compile(r"(\d+(?:\.\d+)?)\s*-?\s*" + _UNIT, re.I)
+_COUNT = re.compile(r"(\d+)\s*-?\s*(?:ct|count|pack|pk|rolls?|pieces?|pcs|bags?|bottles?|cans?|jars?|tubs?)\b", re.I)
+
+
+def _unit_name(text, target):
+    u = re.sub(r"\s+", " ", text.lower().replace(".", ""))
+    u = {"lbs": "lb", "fl oz": "fl oz", "floz": "fl oz"}.get(u, u)
+    if u == "oz" and UNIT_FACTORS.get(target, ("",))[0] == "volume":
+        return "fl oz"  # "16 oz" on a drink means fluid ounces
+    return u
+
+
+def size_from_text(text, unit):
+    """(items in one pack, size of one item in `unit`) read from text like "1.7 fl oz, 2-pack" or "2 x 32 oz";
+    (None, None) when the text says nothing usable."""
+    text = str(text or "")
+    m = _MULTI.search(text)
+    if m:
+        each = convert(float(m.group(2)), _unit_name(m.group(3), unit), unit)
+        return (int(m.group(1)), each) if each else (None, None)
+    count = _COUNT.search(text)
+    n = int(count.group(1)) if count else None
+    if unit == "each":
+        return (n, 1.0) if n else (None, None)
+    m = _SINGLE.search(text)
+    if m:
+        each = convert(float(m.group(1)), _unit_name(m.group(2), unit), unit)
+        if each:
+            return n or 1, each
+    return None, None
+
+
+def fill_pack_from_text(info, unit):
+    """The pack size printed in the name or pack text ("22 oz", "2 x 32 oz") fills an empty AI answer, and wins
+    when the AI's number disagrees with it."""
+    for text in (info.get("pack_text"), info.get("quantity"), info.get("name")):
+        n, each = size_from_text(text, unit)
+        if n and each:
+            total = round(n * each, 4)
+            ai = _num(info.get("pack_units"))
+            if not ai or abs(ai - total) / total > 0.05:
+                info.update(pack_units=total, pack_count=n, pack_unit=unit)
+                info["pack_text"] = info.get("pack_text") or text
+            break
+    return info
