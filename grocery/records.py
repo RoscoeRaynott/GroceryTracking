@@ -461,6 +461,60 @@ def move_to_item(product_id, item_name):
     return target["item_id"]
 
 
+GROUP_PROMPT = """You sort grocery products into GROUPS for a home pantry app.
+A group is a set of products the user uses interchangeably, whatever the brand: all sausages are "Sausages",
+all mangoes "Mango", all parathas "Paratha", plain and alkaline water "Water", all eggs "Eggs".
+But products that are NOT swapped for each other are each their own group, even with similar names:
+each different masala / spice mix, chutney, pickle or sauce flavour gets its own group named by its variety
+(e.g. "Chicken Karahi Masala", "Biryani Masala", "Mint Chutney"); plain single spices are their own group too
+("Turmeric Powder"). Household things work the same way ("Paper Towels", "Dish Soap").
+Group names are short, plural where natural, without brand or size.
+Existing groups (prefer one of these, spelled exactly, when it fits):
+{groups}
+Products (ref | current group | brand | product name):
+{products}
+Return only JSON: {{"ref": "group name", ...}} with one entry per product ref."""
+
+
+def suggest_groups(model, limit=80):
+    """One AI call that suggests a group for every product whose group you haven't confirmed and that has no
+    suggestion yet. Saved on the product (group_suggestion), so it's asked once per product."""
+    from grocery import gemini
+    rows = [p for p in products() if p.get("group_status") != "ok" and not p.get("group_suggestion")][:limit]
+    if not rows:
+        return 0
+    groups = sorted({i["name"] for i in items() if i.get("name")})
+    refs = {f"p{n}": p for n, p in enumerate(rows, start=1)}
+    lines = "\n".join(f"{ref} | {p.get('item', '')} | {p.get('brand', '')} | {p['name']}" for ref, p in refs.items())
+    try:
+        reply = gemini.generate_json("group_suggest", model, GROUP_PROMPT.format(
+            groups="\n".join(groups) or "(none yet)", products=lines))
+    except Exception:
+        return 0
+    known = {norm(g): g for g in groups}
+    change = {}
+    for ref, p in refs.items():
+        name = reply.get(ref) if isinstance(reply, dict) else None
+        if isinstance(name, str) and name.strip():
+            name = re.sub(r"\s+", " ", name).strip()
+            change[p["product_id"]] = {"group_suggestion": known.get(norm(name), name)}
+    if change:
+        sheets.update_rows("products", "product_id", change)
+    return len(change)
+
+
+def set_group(product_id, group_name):
+    """Put a product in a group (an existing one, or a new one by that name) and mark its group as confirmed.
+    Products in one group share one 'how long it lasts' and are counted together in Insights."""
+    product = next((p for p in products() if p["product_id"] == product_id), None)
+    if not product or not str(group_name).strip():
+        return None
+    if norm(group_name) != norm(product.get("item", "")):
+        move_to_item(product_id, group_name)
+    sheets.update_rows("products", "product_id", {product_id: {"group_status": "ok"}})
+    return group_name
+
+
 def save_ingredients(product_id, ingredients, source="Said by you"):
     sheets.update_rows("products", "product_id", {product_id: {
         "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
@@ -651,6 +705,8 @@ def completeness(product, item, batch):
     packaged = bool(product) and product.get("packaged") != "no"
     photo = (product or {}).get("photo_url") if packaged else item.get("photo_url") not in ("", "none", None)
     checks = [("photo", bool(photo)), ("kept in", bool(item.get("storage")))]
+    if product:  # which group it belongs to (things you use interchangeably), confirmed by you
+        checks.append(("group", product.get("group_status") == "ok"))
     if item.get("perishable") == "yes":
         checks.append(("expiry", bool(batch.get("expiry_date")) or item.get("no_expiry") == "yes"))
     if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition

@@ -111,6 +111,7 @@ def _panel(bid):
         _bought(batch, product)
         if product:
             _pack(product, item)
+            _group(product, item)
     if not product:
         st.caption("Loose item: no package details to fill in.")
         return
@@ -727,8 +728,47 @@ def _typical(product):
 
 
 
+NEW_GROUP = "➕ New group…"
+
+
+def _group(product, item):
+    """🗂 Which group it's in: things you use interchangeably whatever the brand (all sausages), while things you
+    don't swap (each masala) are their own group. The AI suggests one; you pick it, another, or a new one."""
+    pid = product["product_id"]
+    current = item.get("name") or product.get("item", "")
+    ok = product.get("group_status") == "ok"
+    suggestion = product.get("group_suggestion", "")
+    with st.popover(f"🗂 {current}" + ("" if ok else " ?"), key=f"ii_grouppop_{pid}"):
+        st.caption("Group: things you use interchangeably, whatever the brand. They share one shelf life and "
+                   "are counted together in Insights.")
+        groups = sorted({i["name"] for i in records.items() if i.get("name")}, key=str.lower)
+        if suggestion and records.norm(suggestion) != records.norm(current):
+            new = not any(records.norm(g) == records.norm(suggestion) for g in groups)
+            if st.button(f"✨ Use AI's pick: {suggestion}" + (" (new group)" if new else ""), key=f"ii_groupai_{pid}",
+                         type="primary"):
+                records.set_group(pid, suggestion)
+                st.toast(f"Group: {suggestion}")
+                _refresh()
+        elif not ok and suggestion:
+            st.markdown(f":green-badge[✨ AI agrees: {current}]")
+        options = groups + [NEW_GROUP]
+        pick = st.selectbox("Group", options, index=options.index(current) if current in options else 0,
+                            key=_k(f"ii_group_{pid}", current), label_visibility="collapsed")
+        name = st.text_input("New group name", key=f"ii_groupnew_{pid}",
+                             placeholder="e.g. Sausages, Biryani Masala").strip() if pick == NEW_GROUP else pick
+        if name and records.norm(name) != records.norm(current):
+            if st.button(f"Move to {name}", key=f"ii_groupsave_{pid}", type="primary"):
+                records.set_group(pid, name)
+                st.toast(f"Group: {name}")
+                _refresh()
+        elif not ok and st.button(f"✓ Keep in {current}", key=f"ii_groupok_{pid}"):
+            records.set_group(pid, current)
+            st.toast(f"Group: {current}")
+            _refresh()
+
+
 def _edit_names(product):
-    """✏️ beside the name: fix the product name or brand (the only place they're shown and edited)."""
+    """✏️ beside the name: fix the product name or brand (its group is the 🗂 chip)."""
     pid = product["product_id"]
     # Keys carry the saved values, so the boxes always start from what's saved now (e.g. after a redo search).
     tag = _k(pid, product["name"], product.get("brand", ""))
@@ -744,15 +784,6 @@ def _edit_names(product):
                 and st.button("Save", key=f"ii_names_{pid}", type="primary"):
             records.rename_product(pid, name, brand)
             st.toast("Saved")
-            _refresh()
-        item_name = product.get("item", "")
-        new_item = st.text_input("Item (for shelf life)", value=item_name, key=_k(f"ii_itemname_{pid}", item_name),
-                                 help="Products with the same item share one 'how long it lasts'. Give a product its own "
-                                      "item when it lasts differently (a one-use masala vs a jar of garam masala).")
-        if new_item.strip() and records.norm(new_item) != records.norm(item_name) \
-                and st.button("Move to this item", key=f"ii_moveitem_{pid}", type="primary"):
-            records.move_to_item(pid, new_item)
-            st.toast(f"Now its own item: {new_item.strip()}")
             _refresh()
 
 

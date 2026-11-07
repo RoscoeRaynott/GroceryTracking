@@ -38,6 +38,12 @@ def render():
         # Missing pictures come from Wikipedia, which can be slow: try once per visit, never on every tap.
         st.session_state["pictures_tried"] = True
         records.fill_missing_item_pictures()
+    if not st.session_state.get("groups_tried"):
+        # Once per visit: the AI suggests a group for products that don't have one yet (one cheap call for all).
+        st.session_state["groups_tried"] = True
+        if any(p.get("group_status") != "ok" and not p.get("group_suggestion") for p in records.products()):
+            with st.spinner("Sorting new items into groups…"):
+                records.suggest_groups(sheets.get_settings()["model_labels"])
     products = {p["product_id"]: p for p in records.products()}
     for r in rows:
         r["product"] = products.get(r["batch"].get("product_id"))
