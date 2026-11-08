@@ -162,14 +162,19 @@ def _picture_choices(product, item):
     if choices is None:
         st.caption("Find a picture: from its barcode, the web, or a generic one.")
         if st.button("🖼 Find pictures", key=f"{key}_go", type="primary"):
+            report = []
             with st.spinner("Looking for pictures…"):
                 st.session_state[key] = productinfo.picture_choices(
-                    sheets.get_settings()["model_lookup"], product, item.get("name") or product["name"],
-                    records.lookup_store(product))
+                    sheets.get_settings()["model_lookup"], product, records.short_name(product, item) or product["name"],
+                    records.lookup_store(product), report=report)
+            st.session_state[f"{key}_report"] = report
             _refresh()
         return
+    report = st.session_state.get(f"{key}_report") or []
     if not choices:
-        st.warning("No picture found that loads. Try again later.")
+        st.warning("No picture found that loads.")
+    if report:
+        st.caption("Tried: " + " · ".join(report))
     with st.container(horizontal=True):
         for n, (url, where) in enumerate(choices):
             with st.container(width=96, gap=None, horizontal_alignment="center"):
@@ -182,6 +187,7 @@ def _picture_choices(product, item):
                     _refresh()
     if st.button("Search again", key=f"{key}_again", type="tertiary"):
         st.session_state.pop(key, None)
+        st.session_state.pop(f"{key}_report", None)
         _refresh()
 
 

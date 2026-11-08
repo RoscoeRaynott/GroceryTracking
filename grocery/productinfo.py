@@ -13,6 +13,7 @@ the same way. Results from 2 and 3 must be confirmed by the user.
 import io
 import json
 import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -720,32 +721,42 @@ def off_pictures(brand, name, limit=2):
     return out
 
 
-def picture_choices(model, product, item_name, store="", limit=3):
+def picture_choices(model, product, item_name, store="", limit=3, report=None):
     """Up to `limit` real pictures, best first, each kept as a small copy so it never breaks: the barcode
     database's photo, Open Food Facts photos by brand + name, the photos real product pages declare, then a
-    generic picture of the food. [(picture, where it came from)]."""
+    generic picture of the food by its own name (not its group's). [(picture, where it came from)].
+    report: a list that gets one line per source tried, so the screen can say what happened."""
     out, seen = [], set()
+    report = report if report is not None else []
 
     def add(url, label):
         if len(out) >= limit or not url or url in seen:
-            return
+            return False
         seen.add(url)
         pic = fetch_picture(url)
         if pic:
             out.append((pic, label))
+        return bool(pic)
 
     if product.get("barcode"):
         try:
-            add(off_by_barcode(product["barcode"]).get("photo_url"), "barcode database")
+            got = add(off_by_barcode(product["barcode"]).get("photo_url"), "barcode database")
+            report.append("🔢 barcode database: " + ("found one" if got else "no picture"))
         except Exception:
-            pass
+            report.append("🔢 barcode database: doesn't know this barcode")
     brand, name = product.get("brand", ""), product.get("name", "")
-    for url in off_pictures(brand, name):
-        add(url, "Open Food Facts")
+    before = len(out)
+    try:
+        for url in off_pictures(brand, name):
+            add(url, "Open Food Facts")
+    except Exception:
+        pass
+    report.append(f"🥫 Open Food Facts: {len(out) - before} found")
     if len(out) < limit:
         store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
                       else GENERAL_RULE)
         query = name if brand.lower() in name.lower() else f"{brand} {name}".strip()
+        before = len(out)
         try:
             found, sources = gemini.search_json("picture_search", model, PICTURE_PROMPT.format(query=query, store_rule=store_rule))
             pages = list(found.get("pages") or [])[:4] + [u for _, u in sources[:4]]
@@ -755,11 +766,30 @@ def picture_choices(model, product, item_name, store="", limit=3):
                 add(page_image(page), "product page")
             for url in (found.get("images") or [])[:4]:
                 add(url, "web")
-        except Exception:
-            pass
+            report.append(f"🌐 web search: {len(pages)} pages, {len(out) - before} pictures that load"
+                          + (" (shops often block downloads)" if pages and len(out) == before else ""))
+        except Exception as ex:
+            report.append(f"🌐 web search failed: {str(ex)[:80]}")
     if len(out) < limit:
-        try:
-            add(wiki_image(item_name), "generic picture")
-        except Exception:
-            pass
+        names = [n for n in dict.fromkeys([_plain_name(name, brand), item_name]) if n]
+        for attempt in range(2):  # Wikipedia says "busy" when asked several times quickly: wait and try once more
+            try:
+                got = add(wiki_image(*names), "generic picture")
+                report.append("📚 Wikipedia (" + " / ".join(names) + "): " + ("found one" if got else "no picture"))
+                break
+            except TryLater:
+                if attempt:
+                    report.append("📚 Wikipedia: busy, try again in a minute")
+                else:
+                    time.sleep(2)
+            except Exception:
+                report.append("📚 Wikipedia: no picture")
+                break
     return out
+
+
+def _plain_name(name, brand):
+    """"Kirkland Signature Mangoes, 4 lb" -> "Mangoes": what a generic picture should show."""
+    text = re.sub(re.escape(brand), "", str(name), flags=re.I) if brand else str(name)
+    text = re.split(r",|\(|\d", text)[0]
+    return re.sub(r"\s+", " ", text).strip(" -·")
