@@ -81,7 +81,7 @@ What we know about it:
   {query}
 {barcode_rule}
 Goal 1, the one that matters most: FIND THE PRODUCT.
-- Use a few SHORT searches (brand + product, e.g. "Radhuni turmeric powder"), not one long search.
+- {search_rule}
 - Search anywhere: the maker's own site, Amazon, Walmart, and South Asian / East Asian / international
   grocery sites. Many imported products (Indian, Bangladeshi, Asian brands) are not sold by big US chains.
 {store_rule}- If the brand makes only one version of this product (one turmeric powder, one garam masala), that
@@ -230,16 +230,20 @@ class Blocked(Exception):
 
 
 BLOCKED_MSG = "Google blocked this answer (it would copy the label text word for word)."
+# Each Google search is billed, so lookups start with 1-2; "Search more" asks for a few.
+SEARCHES = {False: "Use 1-2 SHORT searches (brand + product, e.g. \"Kirkland whole milk\"), not one long search.",
+            True: "Use a few SHORT searches (brand + product, e.g. \"Radhuni turmeric powder\"), not one long search; "
+                  "try the maker's site, other stores and South Asian / East Asian / international grocery sites."}
 
 
-def web_lookup(model, query, unit="each", barcode="", store="", needs=None, allow_parts=False):
+def web_lookup(model, query, unit="each", barcode="", store="", needs=None, allow_parts=False, deep=False):
     """query = short search text (brand, product, real size, big-chain store).
     unit = the item's standard unit, so the pack size comes back in it.
     barcode = digits to search for first (used when Open Food Facts doesn't know the barcode)."""
     store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
                   else GENERAL_RULE)
     prompt = SEARCH_PROMPT.format(query=query or f"barcode {barcode}", shape=INFO_SHAPE, unit=unit,
-                                  store_rule=store_rule,
+                                  store_rule=store_rule, search_rule=SEARCHES[deep],
                                   barcode_rule=BARCODE_RULE.format(barcode=barcode) if barcode else "")
     try:
         result, sources = gemini.search_json("product_web_lookup", model, prompt)
@@ -250,7 +254,7 @@ def web_lookup(model, query, unit="each", barcode="", store="", needs=None, allo
             raise Blocked(BLOCKED_MSG) from ex
         # Google blocked the answer for copying the label text word for word: ask for it in three small parts.
         result, sources = _lookup_in_parts(model, query or f"barcode {barcode}", unit, store_rule,
-                                           BARCODE_RULE.format(barcode=barcode) if barcode else "", needs)
+                                           BARCODE_RULE.format(barcode=barcode) if barcode else "", needs, deep)
     if not result.get("product_found"):
         raise NotFound(result.get("reason") or "No exact match found.")
     info = _from_ai(dict(result.get("info") or {}, name=result.get("matched_name") or ""), "Web search",
@@ -459,24 +463,24 @@ def wiki_image(*titles):
 
 LAB_PROMPTS = {
     "product": """Identify this grocery product. What we know: {query}
-{store_rule}Use a few short searches. Return only JSON:
+{store_rule}{search_rule} Return only JSON:
 {{"product_found": true/false, "matched_name": full name as listed, "matched_brand": brand or "",
   "matched_url": product page URL, "image_url": direct URL of its main photo or "",
   "pack_text": pack size as listed or "", "pack_count": how many units in one pack (2-pack = 2),
   "each_in_unit": {unit} in one of those units, or null,
   "abv": % alcohol by volume if it is an alcoholic drink, else null, "reason": one sentence}}""",
     "nutrition": """Find the Nutrition Facts for this grocery product. What we know: {query}
-{store_rule}Use a few short searches. Report only numbers, never copy text. Return only JSON:
+{store_rule}{search_rule} Report only numbers, never copy text. Return only JSON:
 {{"found": true/false, "serving_size": short, e.g. "3/4 cup (170g)", "servings_per_pack": number or null,
   "nutrients": {{nutrient: {{"amount": number, "dv": number or null}}}} using only these keys and units, per serving:
   {nutrients}, "reason": one sentence}}""",
     "ingredient_items": """Find what this grocery product is made of. What we know: {query}
-{store_rule}Use a few short searches. Do NOT copy the printed ingredients sentence. Instead list each
+{store_rule}{search_rule} Do NOT copy the printed ingredients sentence. Instead list each
 ingredient separately as a short lowercase name in its own array item, in the same order
 (e.g. ["chicken wings", "salt", "garlic", "butter"]). Return only JSON:
 {{"found": true/false, "ingredient_items": [ ... ], "reason": one sentence}}""",
     "ingredients": """Find the ingredients list for this grocery product. What we know: {query}
-{store_rule}Use a few short searches. Return only JSON:
+{store_rule}{search_rule} Return only JSON:
 {{"found": true/false, "ingredients": the ingredients as one comma-separated list, or "",
   "reason": one sentence}}""",
 }
@@ -485,7 +489,7 @@ ingredient separately as a short lowercase name in its own array item, in the sa
 PART_NEEDS = {"nutrition": "nutrition", "ingredient_items": "ingredients"}
 
 
-def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None):
+def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None, deep=False):
     """Product only + nutrition only + ingredients as separate items, at the same time, combined into the
     usual lookup reply. Only the product part must succeed; the other two are a bonus, and are only asked
     for when they're still missing (each part is a paid search)."""
@@ -501,7 +505,8 @@ def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None
     def run(part):
         if needs is not None and part != "product" and PART_NEEDS[part] not in needs:
             return ({}, [])  # already known: don't pay for it
-        prompt = LAB_PROMPTS[part].format(query=query, store_rule=rule, unit=unit, nutrients=NUTRIENT_LIST)
+        prompt = LAB_PROMPTS[part].format(query=query, store_rule=rule, unit=unit, nutrients=NUTRIENT_LIST,
+                                          search_rule=SEARCHES[deep])
         try:
             return gemini.search_json(f"lookup_{part}", model, prompt)
         except gemini.GeminiError:
@@ -527,7 +532,8 @@ def lab_lookup(model, part, query, unit="each", store=""):
     Returns (reply, sources)."""
     store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
                   else GENERAL_RULE)
-    prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST)
+    prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST,
+                                      search_rule=SEARCHES[False])
     return gemini.search_json(f"lab_{part}", model, prompt)
 
 

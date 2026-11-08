@@ -58,35 +58,42 @@ def list_models(key):
     )
 
 
-def generate_json(task, model, prompt, media=(), on_text=None):
+def generate_json(task, model, prompt, media=(), on_text=None, thinking=None):
     """Send a prompt plus media [(bytes, mime type)] and return the parsed JSON reply.
 
     With on_text, the reply is streamed and on_text(reply so far) is called as pieces arrive, so the
     screen can show progress; it takes no longer than waiting for the whole reply.
     Every call is logged to the ai_log tab (model, tokens, seconds).
+    thinking: "low" to make the model think less (cheaper; Google's thinkingLevel), None for its default.
     """
     if on_text:
         try:
-            return _stream(task, model, prompt, media, on_text)
+            return _stream(task, model, prompt, media, on_text, thinking)
         except _StreamUnavailable:
             pass  # fall back to the plain call
-    result, _ = _generate(task, model, prompt, media, search=False)
+    result, _ = _generate(task, model, prompt, media, search=False, thinking=thinking)
     return result
+
+
+def _config(json_reply, thinking):
+    config = {"responseMimeType": "application/json"} if json_reply else {}
+    if thinking:
+        config["thinkingConfig"] = {"thinkingLevel": thinking}
+    return config
 
 
 class _StreamUnavailable(Exception):
     """Streaming failed before any text arrived (and not for quota): use the plain call instead."""
 
 
-def _stream(task, model, prompt, media, on_text):
+def _stream(task, model, prompt, media, on_text, thinking=None):
     key = api_key()
     if not key:
         raise GeminiError("No Gemini API key in Streamlit secrets.")
     parts = [{"text": prompt}]
     for data, mime in media:
         parts.append({"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode("ascii")}})
-    body = {"contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {"responseMimeType": "application/json"}}
+    body = {"contents": [{"role": "user", "parts": parts}], "generationConfig": _config(True, thinking)}
     req = urllib.request.Request(
         f"{API}/models/{model}:streamGenerateContent?alt=sse", data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},
@@ -138,15 +145,15 @@ def _stream(task, model, prompt, media, on_text):
         _log(task, model, usage, time.time() - started, ok)
 
 
-def search_json(task, model, prompt):
+def search_json(task, model, prompt, thinking=None):
     """Like generate_json, but Gemini may search Google first.
 
     Returns (parsed JSON, [(title, url)] of the web pages it used).
     """
-    return _generate(task, model, prompt, (), search=True)
+    return _generate(task, model, prompt, (), search=True, thinking=thinking)
 
 
-def _generate(task, model, prompt, media, search):
+def _generate(task, model, prompt, media, search, thinking=None):
     key = api_key()
     if not key:
         raise GeminiError("No Gemini API key in Streamlit secrets.")
@@ -157,8 +164,8 @@ def _generate(task, model, prompt, media, search):
     if search:
         # JSON mode can't be combined with tools on every model, so the prompt asks for JSON instead.
         body["tools"] = [{"google_search": {}}]
-    else:
-        body["generationConfig"] = {"responseMimeType": "application/json"}
+    if _config(not search, thinking):
+        body["generationConfig"] = _config(not search, thinking)
     req = urllib.request.Request(
         f"{API}/models/{model}:generateContent", data=json.dumps(body).encode("utf-8"),
         headers={"Content-Type": "application/json", "x-goog-api-key": key},

@@ -28,8 +28,9 @@ def render():
     with st.container(horizontal=True):
         if st.button("💸 AI costs", key="to_costs", type="primary", help="What the AI has cost, by task"):
             go("costs")
-        if st.button("🧪 Lookup lab", key="to_lab", type="tertiary", help="Try the three kinds of product search on one product"):
-            go("lab")
+        if st.button("🧪 Thinking trial", key="to_trial", type="tertiary",
+                     help="Read one receipt with normal and low thinking and compare the items and the cost"):
+            go("trial")
 
     _, err = _sheet_status()
     models = _gemini_status()

@@ -1,7 +1,7 @@
 import streamlit as st
 
 from grocery import costs
-from grocery.views import add_purchase, costs as costs_view, history, home, insights, lab, pantry, settings, voice_update
+from grocery.views import add_purchase, costs as costs_view, history, home, insights, pantry, settings, trial, voice_update
 
 st.set_page_config(page_title="Grocery Tracker", page_icon="🛒", layout="centered")
 
@@ -13,7 +13,7 @@ PAGES = {
     "history": history.render,
     "pantry": pantry.render,
     "insights": insights.render,
-    "lab": lab.render,
+    "trial": trial.render,
     "costs": costs_view.render,
 }
 

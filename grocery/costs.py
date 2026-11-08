@@ -27,6 +27,8 @@ TASKS = {
 def task_name(task):
     if str(task).startswith("lab_"):
         return "🧪 Lookup lab"
+    if str(task).startswith("trial_"):
+        return "🧪 Thinking trial"
     return TASKS.get(task, task)
 
 

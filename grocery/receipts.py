@@ -105,8 +105,9 @@ tax, total and payment lines. Never invent prices; if an item's price is unknown
 mark it unclear."""
 
 
-def transcribe(model, jpeg, on_text=None):
-    return gemini.generate_json("receipt_read", model, TRANSCRIBE_PROMPT, [(jpeg, "image/jpeg")], on_text=on_text)
+def transcribe(model, jpeg, on_text=None, thinking=None, task="receipt_read"):
+    extra = {"thinking": thinking} if thinking else {}  # the normal path sends exactly what it always did
+    return gemini.generate_json(task, model, TRANSCRIBE_PROMPT, [(jpeg, "image/jpeg")], on_text=on_text, **extra)
 
 
 def order_photos(readings):
@@ -183,7 +184,8 @@ thing twice. A line found in only one view is still one item.
 """
 
 
-def interpret(model, store, source_type, merged, items, product_refs=None, on_text=None):
+def interpret(model, store, source_type, merged, items, product_refs=None, on_text=None, thinking=None,
+              task="receipt_items"):
     """Receipt lines -> items. product_refs = {ref: product row} the AI may match lines to;
     on_text(reply so far) is called while the reply streams in (for live progress)."""
     item_lines = "\n".join(
@@ -202,7 +204,8 @@ def interpret(model, store, source_type, merged, items, product_refs=None, on_te
         products=voice.products_text(product_refs or {}),
         lines=line_text, kinds=KINDS, units=UNITS, storage=STORAGE, mixed_rule=MIXED_RULE if mixed else "",
     )
-    return gemini.generate_json("receipt_items", model, prompt, on_text=on_text)
+    extra = {"thinking": thinking} if thinking else {}
+    return gemini.generate_json(task, model, prompt, on_text=on_text, **extra)
 
 
 def summarize(readings):

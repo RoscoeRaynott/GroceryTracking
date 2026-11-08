@@ -253,11 +253,16 @@ def _lookup_result(product, item, found):
             if found.get("missing"):
                 return
         elif found.get("missing"):
-            st.warning(f"Not found{f' on {store}' + chr(39) + 's site' if store else ''}. {found['missing']}")
-            if st.button("OK", key=f"{key}_ok"):
-                st.session_state.pop(key, None)
-                _refresh()
+            st.warning(f"Not found{f' on {store}' + chr(39) + 's site' if store else ''}. {found['missing']}"
+                       + (f" (the longer search cost ${found['extra_cost']:.3f})" if found.get("extra_cost") is not None else ""))
+            with st.container(horizontal=True):
+                _search_more(product, item, found, key)
+                if st.button("OK", key=f"{key}_ok"):
+                    st.session_state.pop(key, None)
+                    _refresh()
             return
+        if found.get("extra_cost") is not None:
+            st.caption(f"🔎 The longer search cost ${found['extra_cost']:.3f}.")
         with st.container(horizontal=True, vertical_alignment="center"):
             if found.get("photo_url"):
                 st.image(found["photo_url"], width=64)
@@ -326,6 +331,29 @@ def _lookup_result(product, item, found):
             if st.button("Not this", key=f"{key}_no"):
                 st.session_state.pop(key, None)
                 _refresh()
+            if not found.get("deep"):
+                _search_more(product, item, found, key)
+
+
+def _search_more(product, item, found, key):
+    """🔎 Search more: the same lookup with a few searches instead of 1-2, for the odd item the quick one misses.
+    Says what it cost."""
+    if found.get("deep") or not st.button("🔎 Search more", key=f"{key}_deep", type="tertiary",
+                                          help="A longer search (a few Google searches instead of 1-2), for items the "
+                                               "quick one didn't find well. Costs more; you'll see how much."):
+        return
+    from grocery import costs
+    seen = len(st.session_state.get(costs.SPEND, []))
+    query = str(found.get("name") or "").strip() if not found.get("missing") else ""
+    with st.spinner("Searching more widely…"):
+        result = _lookup(lambda: productinfo.web_lookup(
+            sheets.get_settings()["model_lookup"], query or records.product_search_text(product),
+            product.get("pack_unit") or item.get("unit") or "each", barcode=product.get("barcode", ""),
+            store=records.lookup_store(product), needs=records.lookup_needs(product, item) or None, deep=True))
+    result["deep"] = True
+    result["extra_cost"] = sum(d for _, d, _ in st.session_state.get(costs.SPEND, [])[seen:])
+    st.session_state[key] = result
+    _refresh()
 
 
 def _blocked(product, item, found, key):
