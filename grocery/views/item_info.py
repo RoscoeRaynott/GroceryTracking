@@ -105,7 +105,7 @@ def _panel(bid):
     facts.append(f":gray-badge[⏱ {days}d open]")
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         st.markdown(" ".join(facts), width="content")
-        _kept(item)
+        _kept(item, product)
         if item.get("perishable") == "yes":  # only things that go bad need an expiry date (same rule as the bar)
             _expiry(batch, item)
         _bought(batch, product)
@@ -463,10 +463,13 @@ def _days_open(batch):
     return (timeutil.now().date() - bought).days if bought else 0
 
 
-def _kept(item):
+def _kept(item, product=None):
+    """❄️ Where this product is kept (its own place; a new product starts with its group's), and, for the whole
+    group, whether it goes bad and what kind of thing it is."""
     if item.get("kind") == "One-time":
         return
-    current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
+    current = records.storage_of(product, item)
+    current = current if current in STORAGE else "Fridge"
     perishable = item.get("perishable") == "yes"
     label = f"{PLACE_ICONS.get(current, '')} {current} · {'perishable' if perishable else 'keeps'}"
     if item.get("kind") == "Household":
@@ -482,13 +485,20 @@ def _kept(item):
             records.set_item(item["item_id"], kind=new_kind, tracked="no" if new_kind == "One-time" else "yes")
             st.toast(f"{item['name']}: {new_kind}")
             _refresh()
-        choice = st.segmented_control("Kept in", STORAGE, default=current, key=_k(f"ii_kept_{item['item_id']}", current),
+        tag = f"{item['item_id']}_{(product or {}).get('product_id', '')}"
+        choice = st.segmented_control("Kept in", STORAGE, default=current, key=_k(f"ii_kept_{tag}", current),
                                       format_func=lambda s: f"{PLACE_ICONS.get(s, '')} {s}",
                                       label_visibility="collapsed")
-        goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=_k(f"ii_per_{item['item_id']}", perishable))
-        change = {}
         if choice and choice != current:
-            change["storage"] = choice
+            if product:  # this product only; the rest of its group stays where it is
+                records.set_storage(product["product_id"], choice)
+            else:
+                records.set_item(item["item_id"], storage=choice)
+            st.toast(f"Kept in {choice} from now on")
+            _refresh()
+        goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=_k(f"ii_per_{item['item_id']}", perishable),
+                             help=f"For the whole group ({item.get('name', '')})")
+        change = {}
         if goes_bad != perishable:
             change["perishable"] = "yes" if goes_bad else "no"
         if change:

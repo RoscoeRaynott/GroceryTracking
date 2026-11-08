@@ -611,3 +611,10 @@ _Status: gathering requirements. No code until the plan is approved._
 - A receipt whose date is more than 60 days from the day it was added shows :orange-badge[date looks wrong?] (e.g. read as 2023 instead of 2026).
 - **Pictures, made sturdier (built):** each item's picture is cut out right when its screenshot is read and kept on that line (and in the draft when it fits a Sheet cell), so it survives overlaps, reloads and the paper + app matching. Picture boxes are accepted as a list, `{ymin,…}` or pixels. If the AI links an item only to its paper line, the screenshot line with the same price and most of the same words gives its picture. The review shows "📷 N of M item pictures taken from your screenshots".
 - **Review warns about odd dates:** a receipt date more than 60 days from today shows a warning before saving.
+
+## Kept in is per product (built)
+- **Where it's kept belongs to each product** (products `storage`; empty = its group's usual place). A frozen brand stays in Freezer while a fresh brand of the same group is in Fridge. The ❄️ chip in the item panel moves this product only ("every time you buy it"); "goes bad" and Food/Household stay on the group.
+- A product keeps its place when it moves to another group. New products start in their group's usual place; on a receipt, a product bought before defaults to where you keep it.
+- **A group split across places shows in each section** with only what's kept there (e.g. "Sausages ×2" in Freezer, "Sausages" in Fridge).
+- Insights' "Kept in" shows where the group's products are (lists them when they differ); changing it there moves the whole group. Insights still counts the group as a whole.
+- For later (shelf life): learn shelf life per group **and** place.

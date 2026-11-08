@@ -99,15 +99,13 @@ def save_purchase(review, finished, draft_id, readings):
             known[norm(row["name"])] = {k: sheets._cell(v) for k, v in row.items()}
             new_items.append(row)
     sheets.append_rows("items", new_items)
-    # A known item kept somewhere new (e.g. "I keep raspberries in the freezer") updates the item.
+    # A known item that goes bad differently updates the group; where it's kept is saved on the product (below).
     item_changes, new_ids = {}, {r["item_id"] for r in new_items}
     for card in review["items"]:
         item = known[norm(card["item"])]
         if item["item_id"] in new_ids or card["kind"] == "One-time":
             continue
         change = {}
-        if card.get("storage") and card["storage"] != item.get("storage"):
-            change["storage"] = card["storage"]
         perishable = "yes" if card.get("perishable") else "no"
         if item.get("perishable") and perishable != item["perishable"]:
             change["perishable"] = perishable
@@ -132,6 +130,8 @@ def save_purchase(review, finished, draft_id, readings):
                                                          barcode=card.get("barcode", ""))
             if card.get("picture") and not found.get("photo_url"):  # picture from an online order
                 info_updates.setdefault(found["product_id"], {})["photo_url"] = card["picture"]
+            if card.get("storage") and card["storage"] != storage_of(found, item):  # kept somewhere new
+                info_updates.setdefault(found["product_id"], {})["storage"] = card["storage"]
         elif card["product"].strip():
             row = {"product_id": readable_id(slug(card["product"], 50), product_ids),
                    "item_id": item["item_id"], "item": item["name"],
@@ -144,6 +144,8 @@ def save_purchase(review, finished, draft_id, readings):
                 row.update(productinfo.product_columns(card["info"]))
             if card.get("picture") and not row.get("photo_url"):  # the store's own picture, from an online order
                 row["photo_url"] = card["picture"]
+            if card.get("storage") and card["storage"] != item.get("storage"):  # kept elsewhere than its group
+                row["storage"] = card["storage"]
             products[key] = row
             new_products.append(row)
     sheets.append_rows("products", new_products)
@@ -406,6 +408,16 @@ def products():
     return sheets.read_tab("products")
 
 
+def storage_of(product, item):
+    """Where it's kept: the product's own place (a frozen brand stays in the freezer), else its group's usual one."""
+    return (product or {}).get("storage") or (item or {}).get("storage") or "Open air"
+
+
+def set_storage(product_id, storage):
+    """Where this product is kept, every time you buy it (other products in its group keep their own place)."""
+    sheets.update_rows("products", "product_id", {product_id: {"storage": storage}})
+
+
 def set_item(item_id, **fields):
     """Change how an item is kept (storage, perishable…); applies to it from now on."""
     sheets.update_rows("items", "item_id", {item_id: fields})
@@ -458,6 +470,8 @@ def move_to_item(product_id, item_name):
     if not product or not item_name:
         return None
     old = next((i for i in items() if i["item_id"] == product.get("item_id")), {})
+    if not product.get("storage") and old.get("storage"):  # it stays where it is when its group changes
+        sheets.update_rows("products", "product_id", {product_id: {"storage": old["storage"]}})
     target = next((i for i in items() if norm(i["name"]) == norm(item_name)), None)
     if target is None:
         target = dict(old, item_id=readable_id(slug(item_name), taken_ids("items", "item_id")), name=item_name,
@@ -723,7 +737,7 @@ def completeness(product, item, batch):
     item, batch = item or {}, batch or {}
     packaged = bool(product) and product.get("packaged") != "no"
     photo = (product or {}).get("photo_url") if packaged else item.get("photo_url") not in ("", "none", None)
-    checks = [("photo", bool(photo)), ("kept in", bool(item.get("storage")))]
+    checks = [("photo", bool(photo)), ("kept in", bool((product or {}).get("storage") or item.get("storage")))]
     if product:  # which group it belongs to (things you use interchangeably), confirmed by you
         checks.append(("group", product.get("group_status") == "ok"))
     if item.get("perishable") == "yes":

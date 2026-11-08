@@ -24,6 +24,7 @@ TABS = {
         "lookup_missed_on",  # date Look up all last found nothing; it skips the product for 30 days
         "group_suggestion",  # the group (item) the AI suggests for it
         "group_status",  # "ok": you confirmed its group
+        "storage",  # where this product is kept; "" = its group's usual place
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [

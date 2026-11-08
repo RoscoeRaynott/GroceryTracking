@@ -77,7 +77,7 @@ def render():
     st.html(TAP_JS, unsafe_allow_javascript=True)
 
     food = [r for r in shown if r["item"].get("kind", "Food") == "Food"]
-    groups = [(f"{place}", [r for r in food if (r["item"].get("storage") or "Open air") == place]) for place in PLACES]
+    groups = [(f"{place}", [r for r in food if records.storage_of(r["product"], r["item"]) == place]) for place in PLACES]
     groups.append(("🧴 Household", [r for r in shown if r["item"].get("kind", "Food") != "Food"]))
     for title, here in groups:
         if not here:
@@ -112,7 +112,10 @@ def _by_group(rows):
 
 
 def _gid(members):
-    return re.sub(r"[^a-z0-9]+", "-", str(members[0]["batch"].get("item_id") or members[0]["batch"]["item"]).lower()).strip("-")
+    """The group's id, plus where these are kept: a group split across fridge and freezer shows in both."""
+    place = records.storage_of(members[0]["product"], members[0]["item"])
+    key = f"{members[0]['batch'].get('item_id') or members[0]['batch']['item']}-{place}"
+    return re.sub(r"[^a-z0-9]+", "-", key.lower()).strip("-")
 
 
 def _group_tile(members, lookable):

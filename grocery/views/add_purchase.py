@@ -713,7 +713,11 @@ def _card(c, review, known, open_by_item, open_fields):
                 user_set = c.get("user_set", set())
                 c["kind"], c["unit"] = existing["kind"], existing["unit"]
                 if "storage" not in user_set and not c.get("storage_seen"):
-                    c["storage"] = existing["storage"] if existing["storage"] in STORAGE else "Fridge"
+                    # A product you've bought before is kept where you keep it; a new one where its group usually is.
+                    known_product = next((p for p in records.products() if p.get("item_id") == existing["item_id"]
+                                          and records.norm(p["name"]) == records.norm(c.get("product", ""))), None)
+                    place = records.storage_of(known_product, existing)
+                    c["storage"] = place if place in STORAGE else "Fridge"
                 if "perishable" not in user_set and not c.get("storage_seen"):
                     c["perishable"] = existing["perishable"] == "yes"
                 c["storage_seen"] = True

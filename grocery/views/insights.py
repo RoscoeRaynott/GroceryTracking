@@ -74,13 +74,21 @@ def _picture(item):
 
 
 def _kept_in(item):
-    """Where this item is kept; changing it moves it in Pantry."""
+    """Where this group's products are kept. Changing it here moves the whole group (each product can still be
+    moved on its own in its Pantry panel)."""
     if item.get("kind") == "One-time":
         return
-    current = item.get("storage") if item.get("storage") in STORAGE else "Fridge"
-    choice = st.segmented_control("Kept in", STORAGE, default=current, key=f"kept_{item['item_id']}_{current}")
-    if choice and choice != current:
+    places = {records.storage_of(p, item) for p in records.products() if p.get("item_id") == item["item_id"]}
+    current = next(iter(places)) if len(places) == 1 else (item.get("storage") or "Fridge")
+    current = current if current in STORAGE else "Fridge"
+    if len(places) > 1:
+        st.caption("Kept in: " + " · ".join(sorted(places)) + " (different products in different places)")
+    choice = st.segmented_control("Kept in", STORAGE, default=None if len(places) > 1 else current,
+                                  key=f"kept_{item['item_id']}_{'-'.join(sorted(places))}")
+    if choice and (len(places) > 1 or choice != current):
         sheets.update_rows("items", "item_id", {item["item_id"]: {"storage": choice}})
+        sheets.update_rows("products", "product_id", {p["product_id"]: {"storage": ""} for p in records.products()
+                                                      if p.get("item_id") == item["item_id"]})
         st.toast(f"{item['name']} now kept in {choice}")
         st.rerun()
 
