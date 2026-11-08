@@ -28,6 +28,7 @@ def _rows():
                  "thoughtsTokenCount": _f(r.get("thought_tokens")), "toolUsePromptTokenCount": _f(r.get("tool_tokens"))}
         logged = r.get("cost_usd") not in ("", None)
         out.append({"at": at, "task": costs.task_name(r.get("task", "")), "model": r.get("model", ""),
+                    "blocked": "RECITATION" in str(r.get("error", "")),
                     "searches": int(_f(r.get("searches"))),
                     "thinking": int(usage["thoughtsTokenCount"]),
                     "cost": _f(r["cost_usd"]) if logged else costs.cost(r.get("model", ""), usage),
@@ -53,10 +54,12 @@ def render():
         return
     df = pd.DataFrame(shown)
     total, searches = df["cost"].sum(), int(df["searches"].sum())
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Spent", f"${total:,.2f}")
     c2.metric("AI calls", f"{len(df)}")
     c3.metric("Google searches", f"{searches}")
+    c4.metric("🚧 Blocked", f"{int(df['blocked'].sum())}", help="Lookups Google blocked for copying label text; "
+              "each can be fetched in 3 parts from its panel (≈4× a lookup)")
     if not df["full"].all():
         st.caption("⚠️ Calls logged before this page existed miss thinking and searches: their cost is a low estimate.")
 

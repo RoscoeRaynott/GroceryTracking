@@ -224,7 +224,15 @@ def by_barcode(model, barcode, query="", unit="each", store=""):
         return web_lookup(model, query, unit, barcode=barcode, store=store)
 
 
-def web_lookup(model, query, unit="each", barcode="", store="", needs=None):
+class Blocked(Exception):
+    """Google blocked the answer because it would copy the label text word for word (RECITATION). Fetching it
+    in 3 smaller parts usually works, but costs about 4 lookups, so it's only done when you ask."""
+
+
+BLOCKED_MSG = "Google blocked this answer (it would copy the label text word for word)."
+
+
+def web_lookup(model, query, unit="each", barcode="", store="", needs=None, allow_parts=False):
     """query = short search text (brand, product, real size, big-chain store).
     unit = the item's standard unit, so the pack size comes back in it.
     barcode = digits to search for first (used when Open Food Facts doesn't know the barcode)."""
@@ -238,6 +246,8 @@ def web_lookup(model, query, unit="each", barcode="", store="", needs=None):
     except gemini.GeminiError as ex:
         if "RECITATION" not in str(ex):
             raise
+        if not allow_parts:
+            raise Blocked(BLOCKED_MSG) from ex
         # Google blocked the answer for copying the label text word for word: ask for it in three small parts.
         result, sources = _lookup_in_parts(model, query or f"barcode {barcode}", unit, store_rule,
                                            BARCODE_RULE.format(barcode=barcode) if barcode else "", needs)
@@ -521,7 +531,7 @@ def lab_lookup(model, part, query, unit="each", store=""):
     return gemini.search_json(f"lab_{part}", model, prompt)
 
 
-def identify_then_search(model, found, unit="each", store="", needs=None):
+def identify_then_search(model, found, unit="each", store="", needs=None, allow_parts=False):
     """A barcode or a photo of the pack told us exactly what it is: search the web with that exact name for the
     photo, pack size and label info. What a photo of the label read always wins; the barcode is kept."""
     name = str(found.get("name") or "").strip()
@@ -530,7 +540,10 @@ def identify_then_search(model, found, unit="each", store="", needs=None):
     brand = str(found.get("brand") or "").strip()
     query = name if brand.lower() in name.lower() else f"{brand} {name}".strip()
     try:
-        web = web_lookup(model, query, unit, barcode=found.get("barcode", ""), store=store, needs=needs)
+        web = web_lookup(model, query, unit, barcode=found.get("barcode", ""), store=store, needs=needs,
+                         allow_parts=allow_parts)
+    except Blocked:
+        return dict(found, blocked=True)  # what the barcode / photo told us, and a note that the rest was blocked
     except Exception:
         return found  # the identification alone is still worth showing
     from_label = "label photo" in str(found.get("source", "")).lower()
@@ -555,7 +568,7 @@ def still_missing(info, needs):
     return {n for n in needs if not has.get(n)}
 
 
-def best_lookup(model, label_model, query, unit="each", store="", barcode="", photos=(), needs=None):
+def best_lookup(model, label_model, query, unit="each", store="", barcode="", photos=(), needs=None, allow_parts=False):
     """The cheapest lookup that fills what's missing (`needs`; None = everything):
     1. photos of the pack: read by the cheap label model; the web is searched only if something's still missing.
     2. a barcode: the free Open Food Facts database; the web is searched only if something's still missing,
@@ -567,19 +580,19 @@ def best_lookup(model, label_model, query, unit="each", store="", barcode="", ph
         if barcode and not found.get("barcode"):
             found["barcode"] = barcode
         left = still_missing(found, needs)
-        result = identify_then_search(model, found, unit, store, needs=left) if left else found
+        result = identify_then_search(model, found, unit, store, needs=left, allow_parts=allow_parts) if left else found
         via = "photo"
     elif barcode:
         try:
             found = fill_pack_from_text(off_by_barcode(barcode), unit)
         except NotFound:  # unknown to the free database: one web search by the number (it finds the name too)
-            result = web_lookup(model, query, unit, barcode=barcode, store=store, needs=needs)
+            result = web_lookup(model, query, unit, barcode=barcode, store=store, needs=needs, allow_parts=allow_parts)
         else:
             left = still_missing(found, needs)
-            result = identify_then_search(model, found, unit, store, needs=left) if left else found
+            result = identify_then_search(model, found, unit, store, needs=left, allow_parts=allow_parts) if left else found
         via = "barcode"
     else:
-        result, via = web_lookup(model, query, unit, store=store, needs=needs), "name"
+        result, via = web_lookup(model, query, unit, store=store, needs=needs, allow_parts=allow_parts), "name"
     result["via"] = via  # shown on the tile and in the preview: how this item was found
     return fill_pack_from_text(result, unit)
 

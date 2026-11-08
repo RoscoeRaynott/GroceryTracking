@@ -248,7 +248,11 @@ def _lookup_result(product, item, found):
     pid = product["product_id"]
     key = f"ii_redo_{pid}"
     with st.container(border=True):
-        if found.get("missing"):
+        if found.get("blocked"):
+            _blocked(product, item, found, key)
+            if found.get("missing"):
+                return
+        elif found.get("missing"):
             st.warning(f"Not found{f' on {store}' + chr(39) + 's site' if store else ''}. {found['missing']}")
             if st.button("OK", key=f"{key}_ok"):
                 st.session_state.pop(key, None)
@@ -324,6 +328,25 @@ def _lookup_result(product, item, found):
                 _refresh()
 
 
+def _blocked(product, item, found, key):
+    """Google blocked the answer: say so, and offer to fetch it in 3 parts (about 4 lookups' cost)."""
+    st.warning(f"🚧 {productinfo.BLOCKED_MSG} " + ("What the barcode / photo told us is below; ingredients and nutrition "
+                                                 "were blocked." if not found.get("missing") else ""))
+    with st.container(horizontal=True):
+        if st.button("🧩 Fetch in 3 parts (≈4× a lookup)", key=f"{key}_parts", type="primary",
+                     help="Asks for the product, its ingredients and its nutrition separately, which Google allows"):
+            query = str(found.get("name") or "").strip() or records.product_search_text(product)
+            with st.spinner("Fetching in parts…"):
+                st.session_state[key] = _lookup(lambda: productinfo.web_lookup(
+                    sheets.get_settings()["model_lookup"], query, product.get("pack_unit") or item.get("unit") or "each",
+                    barcode=found.get("barcode") or product.get("barcode", ""), store=records.lookup_store(product),
+                    needs=records.lookup_needs(product, item) or None, allow_parts=True))
+            _refresh()
+        if found.get("missing") and st.button("Skip", key=f"{key}_ok"):
+            st.session_state.pop(key, None)
+            _refresh()
+
+
 VIA = {"barcode": "🔢", "photo": "📷", "name": "🔤"}  # how an item was looked up
 SCANS = "scan_queue"  # {product_id: {"barcode": digits, "photos": [jpeg bytes]}}: scanned, not yet looked up
 
@@ -365,6 +388,8 @@ def _short(col, value):
 def _lookup(fetch):
     try:
         return fetch()
+    except productinfo.Blocked as ex:
+        return {"missing": str(ex), "blocked": True}
     except productinfo.NotFound as ex:
         return {"missing": str(ex) if " " in str(ex) else "Not found."}
     except Exception as ex:

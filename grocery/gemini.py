@@ -165,7 +165,7 @@ def _generate(task, model, prompt, media, search):
     )
 
     started = time.time()
-    usage, ok = {}, False
+    usage, ok, error = {}, False, ""
     try:
         for attempt in range(2):
             try:
@@ -186,6 +186,7 @@ def _generate(task, model, prompt, media, search):
                        if not p.get("thought"))
         if not text:
             reason = candidate.get("finishReason") or data.get("promptFeedback")
+            error = str(reason)[:80]
             raise GeminiError(f"Gemini {model} returned no text ({reason}).")
         result = _parse_json(text)
         sources = [
@@ -197,7 +198,7 @@ def _generate(task, model, prompt, media, search):
         return result, sources
     finally:
         searches = len(((locals().get("candidate") or {}).get("groundingMetadata") or {}).get("webSearchQueries") or [])
-        _log(task, model, usage, time.time() - started, ok, searches)
+        _log(task, model, usage, time.time() - started, ok, searches, error)
 
 
 def _parse_json(text):
@@ -214,7 +215,7 @@ def _parse_json(text):
         raise GeminiError(f"Gemini's reply was not valid JSON: {ex}") from ex
 
 
-def _log(task, model, usage, seconds, ok, searches=0):
+def _log(task, model, usage, seconds, ok, searches=0, error=""):
     """Every call goes to the ai_log tab with its tokens, searches and cost, and into the next cost pop-up."""
     from grocery import costs
     try:
@@ -235,6 +236,7 @@ def _log(task, model, usage, seconds, ok, searches=0):
             "tool_tokens": usage.get("toolUsePromptTokenCount", ""),
             "searches": searches,
             "cost_usd": round(dollars, 5),
+            "error": error,
         }])
     except Exception:
         pass  # Logging must never break the actual task.

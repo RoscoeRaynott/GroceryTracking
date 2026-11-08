@@ -47,6 +47,7 @@ TABS = {
         "tool_tokens",  # Google search results the model read, billed as input
         "searches",  # Google searches it ran (each billed)
         "cost_usd",  # worked out from the prices in Settings
+        "error",  # why it failed, e.g. RECITATION (Google blocked an answer that would copy label text)
     ],
 }
 

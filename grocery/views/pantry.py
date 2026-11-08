@@ -443,6 +443,9 @@ def _look_up_all(needs, label="🔎 Look up all"):
             try:
                 st.session_state[f"ii_redo_{pid}"] = job.result()
                 found += 1
+            except productinfo.Blocked as ex:  # not a miss: you can fetch it in parts from its panel
+                st.session_state[f"ii_redo_{pid}"] = {"missing": str(ex), "blocked": True}
+                missed += 1
             except productinfo.NotFound as ex:
                 st.session_state[f"ii_redo_{pid}"] = {"missing": str(ex) if " " in str(ex) else "Not found."}
                 records.set_lookup_missed(pid)  # don't pay to search for it again for a while
