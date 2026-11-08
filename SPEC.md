@@ -608,3 +608,5 @@ _Status: gathering requirements. No code until the plan is approved._
 ## Fix a receipt's date (built)
 - History: each receipt has a 📅 button to change its date (not in the future). Every item on that receipt moves to the new day, so days open, lifespans and warnings follow.
 - A receipt whose date is more than 60 days from the day it was added shows :orange-badge[date looks wrong?] (e.g. read as 2023 instead of 2026).
+- **Pictures, made sturdier (built):** each item's picture is cut out right when its screenshot is read and kept on that line (and in the draft when it fits a Sheet cell), so it survives overlaps, reloads and the paper + app matching. Picture boxes are accepted as a list, `{ymin,…}` or pixels. If the AI links an item only to its paper line, the screenshot line with the same price and most of the same words gives its picture. The review shows "📷 N of M item pictures taken from your screenshots".
+- **Review warns about odd dates:** a receipt date more than 60 days from today shows a warning before saving.

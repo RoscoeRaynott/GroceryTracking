@@ -93,9 +93,13 @@ def _photos_step(state):
         live.done()
         photo["read"] = True
         photo["photo_no"] = photo_no
+        receipts.add_pictures(reading, photo["data"])  # order screenshots: each item's picture, cut out now
         state["readings"].append({"photo_no": photo_no, "name": photo["name"], "model": model,
                                   "reading": reading, "data": photo["data"]})
-        records.save_draft(state["draft_id"], photo_no, photo["name"], model, reading)
+        draft = reading
+        if len(json.dumps(reading)) > 45_000:  # a Sheet cell holds 50,000 characters: keep the draft without pictures
+            draft = dict(reading, lines=[{k: v for k, v in l.items() if k != "picture"} for l in reading.get("lines", [])])
+        records.save_draft(state["draft_id"], photo_no, photo["name"], model, draft)
 
     if not state["readings"]:
         return
@@ -457,6 +461,12 @@ def _review_step(state):
     review["store"] = st.text_input("Store", value=review["store"], key=f"{k}_store",
                                     help="Known stores: " + (", ".join(records.stores()) or "none yet"))
     review["date"] = st.date_input("Date", value=review["date"], key=f"{k}_date", format="MM/DD/YYYY")
+    if abs((timeutil.now().date() - review["date"]).days) > 60:
+        st.warning(f"⚠️ The date reads as {review['date']:%b %d, %Y}. Is that right? Fix it above before saving.")
+    if k == "ap" and any(r["reading"].get("source_type") == "app_screenshot" for r in state.get("readings", [])):
+        pics = sum(1 for c in review["items"] if c.get("picture"))
+        st.markdown(f":blue-badge[📷 {pics} of {len(review['items'])} item pictures taken from your screenshots]"
+                    if pics else ":gray-badge[📷 no item pictures found in the screenshots]")
     if k == "ap":
         review["total_paid"] = st.number_input("Total paid on receipt ($)", value=review["total_paid"],
                                                min_value=0.0, step=0.01, format="%.2f", key=f"{k}_total")
@@ -554,13 +564,23 @@ def _build_review(state):
     shots = {n: data.get(id(r)) for n, r in enumerate(
         receipts.order_photos([r["reading"] for r in state.get("readings", [])]), start=1)}
 
-    def picture(line_ids):
-        for i in line_ids:
-            if isinstance(i, int) and 0 <= i < len(merged) and merged[i].get("picture_box") and shots.get(merged[i].get("photo")):
-                pic = receipts.cut_picture(shots[merged[i]["photo"]], merged[i]["picture_box"])
+    used = set()
+
+    def picture(line_ids, product, price):
+        pic = ""
+        for i in line_ids:  # a picture on one of its own lines (cut when the screenshot was read)
+            if isinstance(i, int) and 0 <= i < len(merged):
+                line = merged[i]
+                pic = line.get("picture") or ""
+                if not pic and receipts.box_of(line) and shots.get(line.get("photo")):
+                    pic = receipts.cut_picture(shots[line["photo"]], receipts.box_of(line))
                 if pic:
-                    return pic
-        return ""
+                    break
+        # else the screenshot line that is this item (same price, same words), if the AI didn't link it
+        pic = pic or receipts.match_picture(product, price, merged, used)
+        if pic:
+            used.add(pic)
+        return pic
     cards = []
     for it in result.get("items", []):
         same = product_refs.get(it.get("product_ref") or "")
@@ -585,7 +605,8 @@ def _build_review(state):
             "packaged": it.get("packaged", True) is not False,
             "receipt_text": " / ".join(str(merged[i].get("text", "")) for i in it.get("lines", [])
                                        if isinstance(i, int) and 0 <= i < len(merged)),
-            "picture": picture(it.get("lines", [])),  # from an online order screenshot, if it shows one
+            "picture": picture(it.get("lines", []), it.get("product") or it.get("item") or "",
+                               _num(it.get("price"), None)),  # from an online order screenshot, if it shows one
         })
         pack = _num((same or {}).get("pack_size"), None)
         if pack:  # receipt price is the line total, so only the amount changes

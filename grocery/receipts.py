@@ -214,6 +214,52 @@ def summarize(readings):
     return out
 
 
+def box_of(line):
+    """The picture box a line came with, as [ymin, xmin, ymax, xmax] in 0-1000, whatever shape the AI used
+    (a list, {"ymin":…}, "box_2d"), or None."""
+    box = line.get("picture_box") or line.get("box_2d") or line.get("box")
+    if isinstance(box, dict):
+        box = [box.get(k) for k in ("ymin", "xmin", "ymax", "xmax")]
+    if isinstance(box, (list, tuple)) and len(box) == 4:
+        try:
+            return [float(v) for v in box]
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def add_pictures(reading, jpeg, size=140):
+    """Cut each item's picture out of an order screenshot right after it's read, and keep it on the line
+    ("picture"), so it survives everything that happens to the lines afterwards. Returns how many."""
+    n = 0
+    for line in reading.get("lines", []):
+        box = box_of(line)
+        if box and line.get("kind", "item") == "item":
+            pic = cut_picture(jpeg, box, size)
+            if pic:
+                line["picture"] = pic
+                n += 1
+    return n
+
+
+def match_picture(product, amount, lines, used):
+    """The picture of the screenshot line that is this item, when the AI didn't link that line to it:
+    the same price and most words in common with the product name."""
+    words = set(re.findall(r"[a-z0-9]+", str(product).lower())) - {"oz", "ct", "lb", "fl", "pack", "the", "and", "of"}
+    best, best_score = None, 0
+    for line in lines:
+        pic = line.get("picture")
+        if not pic or pic in used:
+            continue
+        if amount is not None and isinstance(line.get("amount"), (int, float)) and abs(line["amount"] - amount) > 0.01:
+            continue
+        common = words & set(re.findall(r"[a-z0-9]+", str(line.get("text", "")).lower()))
+        score = len(common) / max(1, len(words))
+        if len(common) >= 2 and score > best_score:
+            best, best_score = pic, score
+    return best if best_score >= 0.5 else ""
+
+
 def cut_picture(jpeg, box, size=200):
     """The product picture an online order shows beside an item, cut out of the screenshot as a small copy
     (a data URI). box = [ymin, xmin, ymax, xmax] scaled 0-1000. "" if the box doesn't look like a picture."""
@@ -224,6 +270,8 @@ def cut_picture(jpeg, box, size=200):
         y0, x0, y1, x1 = (float(v) for v in box)
         img = Image.open(io.BytesIO(jpeg)).convert("RGB")
         w, h = img.size
+        if max(y0, x0, y1, x1) > 1000:  # given in pixels instead of 0-1000
+            y0, y1, x0, x1 = y0 / h * 1000, y1 / h * 1000, x0 / w * 1000, x1 / w * 1000
         left, top, right, bottom = x0 / 1000 * w, y0 / 1000 * h, x1 / 1000 * w, y1 / 1000 * h
         bw, bh = right - left, bottom - top
         if bw < 24 or bh < 24 or bw > 0.6 * w or not 0.33 < bw / bh < 3:
