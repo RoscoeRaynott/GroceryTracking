@@ -549,6 +549,18 @@ def _build_review(state):
 
     merged = state["merged"]
     known = {records.norm(i["name"]): i for i in records.items()}
+    # Each merged line knows its photo by position in the ordered readings; keep those photos to cut pictures from.
+    data = {id(r["reading"]): r.get("data") for r in state.get("readings", [])}
+    shots = {n: data.get(id(r)) for n, r in enumerate(
+        receipts.order_photos([r["reading"] for r in state.get("readings", [])]), start=1)}
+
+    def picture(line_ids):
+        for i in line_ids:
+            if isinstance(i, int) and 0 <= i < len(merged) and merged[i].get("picture_box") and shots.get(merged[i].get("photo")):
+                pic = receipts.cut_picture(shots[merged[i]["photo"]], merged[i]["picture_box"])
+                if pic:
+                    return pic
+        return ""
     cards = []
     for it in result.get("items", []):
         same = product_refs.get(it.get("product_ref") or "")
@@ -573,6 +585,7 @@ def _build_review(state):
             "packaged": it.get("packaged", True) is not False,
             "receipt_text": " / ".join(str(merged[i].get("text", "")) for i in it.get("lines", [])
                                        if isinstance(i, int) and 0 <= i < len(merged)),
+            "picture": picture(it.get("lines", [])),  # from an online order screenshot, if it shows one
         })
         pack = _num((same or {}).get("pack_size"), None)
         if pack:  # receipt price is the line total, so only the amount changes
@@ -627,6 +640,8 @@ def _card(c, review, known, open_by_item, open_fields):
             if c.get("packs") is not None and c["packs"] != 1:
                 badges.insert(0, f":blue-badge[{c['packs']:g} × {c['pack_size']:,g} {c['unit']}]")
         with st.container(horizontal=True, vertical_alignment="center"):
+            if c.get("picture"):  # cut from the online order: becomes the product's photo
+                st.image(c["picture"], width=40)
             st.markdown(f"{title} · {amount} · {_money(c['price'])} {' '.join(badges)}")
             if st.button("", key=f"it_{uid}_del", icon=":material/delete:", type="tertiary",
                          help="Delete this item; the rest stay"):

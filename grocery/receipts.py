@@ -34,7 +34,9 @@ Return only JSON in this shape:
       "quantity": number of units if shown (e.g. "2 @ 3.49" -> 2, "2.31 lb @ 1.29/lb" -> 2.31), else null,
       "quantity_unit": "each" | "lb" | "oz" | null,
       "amount": the line's dollar amount as a number (discounts and refunds negative), else null,
-      "unclear": true if you cannot read this line with confidence
+      "unclear": true if you cannot read this line with confidence,
+      "picture_box": in an app screenshot, the product's own picture shown beside this item as
+                     [ymin, xmin, ymax, xmax] scaled 0-1000 of this image; null if none (always null on paper receipts)
     }
   ]
 }
@@ -198,3 +200,25 @@ def summarize(readings):
             if out[k] in (None, "") and r.get(k) not in (None, ""):
                 out[k] = r.get(k)
     return out
+
+
+def cut_picture(jpeg, box, size=200):
+    """The product picture an online order shows beside an item, cut out of the screenshot as a small copy
+    (a data URI). box = [ymin, xmin, ymax, xmax] scaled 0-1000. "" if the box doesn't look like a picture."""
+    import io
+    from PIL import Image
+    from grocery import productinfo
+    try:
+        y0, x0, y1, x1 = (float(v) for v in box)
+        img = Image.open(io.BytesIO(jpeg)).convert("RGB")
+        w, h = img.size
+        left, top, right, bottom = x0 / 1000 * w, y0 / 1000 * h, x1 / 1000 * w, y1 / 1000 * h
+        bw, bh = right - left, bottom - top
+        if bw < 24 or bh < 24 or bw > 0.6 * w or not 0.33 < bw / bh < 3:
+            return ""  # too small, too wide or a strip of text: not a product picture
+        crop = img.crop((max(0, left), max(0, top), min(w, right), min(h, bottom)))
+        out = io.BytesIO()
+        crop.save(out, format="JPEG", quality=90)
+        return productinfo.thumbnail(out.getvalue(), size)
+    except (TypeError, ValueError, OSError):
+        return ""

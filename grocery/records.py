@@ -130,6 +130,8 @@ def save_purchase(review, finished, draft_id, readings):
             if card.get("info") and found.get("info_status") != "confirmed":
                 info_updates[found["product_id"]] = dict(productinfo.product_columns(card["info"]),
                                                          barcode=card.get("barcode", ""))
+            if card.get("picture") and not found.get("photo_url"):  # picture from an online order
+                info_updates.setdefault(found["product_id"], {})["photo_url"] = card["picture"]
         elif card["product"].strip():
             row = {"product_id": readable_id(slug(card["product"], 50), product_ids),
                    "item_id": item["item_id"], "item": item["name"],
@@ -140,6 +142,8 @@ def save_purchase(review, finished, draft_id, readings):
                               f"{card.get('receipt_text', '')}".strip("; ")}
             if card.get("info"):
                 row.update(productinfo.product_columns(card["info"]))
+            if card.get("picture") and not row.get("photo_url"):  # the store's own picture, from an online order
+                row["photo_url"] = card["picture"]
             products[key] = row
             new_products.append(row)
     sheets.append_rows("products", new_products)
