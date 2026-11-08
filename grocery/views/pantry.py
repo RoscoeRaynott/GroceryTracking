@@ -8,6 +8,7 @@ import base64
 import hashlib
 import html
 import pathlib
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
@@ -84,24 +85,114 @@ def render():
         here.sort(key=lambda r: ({"red": 0, "orange": 1, "ok": 2}[r["level"]], -r["days_open"]))
         st.subheader(f"{title} · {len(here)}", anchor=False)
         with st.container(horizontal=True, gap="small", key=f"grid_{title.encode('ascii', 'ignore').decode().strip().replace(' ', '_') or 'household'}"):
-            for r in here:  # a tick box only on items a Look up button will act on
-                _tile(r, (r["product"] or {}).get("product_id") in lookable)
+            if view != "All":  # Needs info: one tile per purchase, with tick boxes
+                for r in here:  # a tick box only on items a Look up button will act on
+                    _tile(r, (r["product"] or {}).get("product_id") in lookable)
+            else:  # All: one tile per group; a group of one is just its item
+                for members in _by_group(here):
+                    if len(members) == 1:
+                        _tile(members[0], (members[0]["product"] or {}).get("product_id") in lookable)
+                    else:
+                        _group_tile(members, lookable)
     item_info.show_if_open()
+
+
+OPEN_GROUP = "pantry_group"
+LEVEL = {"red": 0, "orange": 1, "ok": 2}
+
+
+def _by_group(rows):
+    """Purchases of the same group (item) together, most urgent group first, most urgent purchase first."""
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["batch"].get("item_id") or r["batch"]["item"], []).append(r)
+    for members in groups.values():
+        members.sort(key=lambda r: (LEVEL[r["level"]], -r["days_open"]))
+    return sorted(groups.values(), key=lambda m: (LEVEL[m[0]["level"]], -m[0]["days_open"]))
+
+
+def _gid(members):
+    return re.sub(r"[^a-z0-9]+", "-", str(members[0]["batch"].get("item_id") or members[0]["batch"]["item"]).lower()).strip("-")
+
+
+def _group_tile(members, lookable):
+    """A group of several purchases (3 sausages): one tile showing the group, ×3 and its most urgent days.
+    Tap: its items open right under it. Long-press: they pop up; slide to one and let go to open it."""
+    gid = _gid(members)
+    is_open = st.session_state.get(OPEN_GROUP) == gid
+    with st.container(border=True, width=112, gap=None, key=f"grp_{gid}"):
+        st.markdown(_group_html(members, is_open), unsafe_allow_html=True)
+        if st.button(members[0]["item"].get("name") or members[0]["batch"]["item"], key=f"gb_{gid}",
+                     help="Tap to see what's in this group; press and hold to pick one"):
+            st.session_state[OPEN_GROUP] = None if is_open else gid
+            st.rerun()
+        # Hidden: one button per purchase, which the long-press menu "taps" for you.
+        with st.container(key=f"gh_{gid}"):
+            for r in members:
+                b = r["batch"]
+                if st.button(f"{records.short_name(r['product'], r['item'])} · {r['days_open']}d",
+                             key=f"pj_{b['batch_id']}"):
+                    item_info.open_panel(b["batch_id"])
+    if is_open:  # its items, on their own row right under the group
+        with st.container(horizontal=True, gap="small", key=f"grpopen_{gid}"):
+            for r in members:
+                _tile(r, (r["product"] or {}).get("product_id") in lookable)
+
+
+def _group_html(members, is_open):
+    first = members[0]
+    item = first["item"]
+    url = item.get("photo_url") if item.get("photo_url") not in ("", "none", None) else ""
+    for r in members:  # the group's picture: its own, else the first product photo in it
+        url = url or (r["product"] or {}).get("photo_url") or ""
+    url = picture_file(url)
+    picture = (f'<img src="{html.escape(url)}" style="width:70px;height:70px;object-fit:contain">' if url else
+               f'<span style="font-size:46px;line-height:70px">{item.get("emoji") or "🛒"}</span>')
+    bg, fg = COLORS[BADGE[first["level"]]]
+    warn = "⚠️ " if first["level"] == "red" else ""
+    name = html.escape(item.get("name") or first["batch"]["item"])
+    arrow = "▴" if is_open else "▾"
+    return f"""<div style="display:flex;flex-direction:column;align-items:center;height:104px;justify-content:space-between">
+<div style="height:70px;display:flex;align-items:center;justify-content:center;position:relative">{picture}
+<span style="position:absolute;top:-2px;right:-14px;background:#FF4B4B;color:white;border-radius:10px;padding:0 6px;font-size:12px;font-weight:700">×{len(members)}</span></div>
+<div style="font-size:13px;font-weight:600;line-height:18px;padding-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px">{name}</div>
+<div style="font-size:12px;white-space:nowrap"><span style="background:{bg};color:{fg};border-radius:6px;padding:1px 6px">{warn}{first["days_open"]}d</span>
+<span style="color:#9AA0A6">{arrow}</span></div></div>"""
 
 
 # Every tile is the same size: its picture, name and badges are drawn as one fixed-size block, so tall and
 # wide photos line up. The whole tile is one invisible button (tap anywhere on it to open the item); the tick
 # box in "Needs info" sits above it.
 TILE_CSS = """<style>
-[class*="st-key-tile_"] { position: relative; padding: 6px 4px 8px; transition: transform .08s, background .08s, opacity .15s;
-  -webkit-tap-highlight-color: transparent; }
+[class*="st-key-tile_"], [class*="st-key-grp_"] { position: relative; padding: 6px 4px 8px;
+  transition: transform .08s, background .08s, opacity .15s; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+/* A group looks like a little stack of cards */
+[class*="st-key-grp_"] { box-shadow: 4px 4px 0 -1px rgba(128,128,128,.35), 8px 8px 0 -2px rgba(128,128,128,.2); }
+[class*="st-key-grp_"] [data-testid="stMarkdown"], [class*="st-key-grp_"] [data-testid="stMarkdownContainer"],
+[class*="st-key-grp_"] [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
+[class*="st-key-gb_"] { position: absolute !important; inset: 0 !important; width: auto !important; z-index: 5; margin: 0; }
+[class*="st-key-gb_"] > div, [class*="st-key-gb_"] button { width: 100% !important; height: 100% !important; }
+[class*="st-key-gb_"] button { opacity: 0; touch-action: manipulation; }
+[class*="st-key-gh_"] { display: none !important; }
+/* An open group: its items on their own row, on a soft band */
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]) { flex: 0 0 100% !important; width: 100% !important; max-width: 100% !important; }
+[class*="st-key-grpopen_"] { width: 100% !important; background: rgba(255,75,75,.08); border-radius: 10px; padding: 6px; }
+/* The long-press menu */
+#gt-menu { position: fixed; z-index: 100000; background: #262730; color: #FAFAFA; border-radius: 12px; padding: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); min-width: 200px; max-width: 80vw; font: 15px sans-serif; }
+#gt-menu div { padding: 12px 14px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gt-menu div.on { background: #FF4B4B; color: white; }
 /* Instant feedback: the tile presses in the moment it's touched */
-[class*="st-key-tile_"]:active, [class*="st-key-tile_"]:has(button:active) { transform: scale(.94); background: rgba(255,75,75,.18); }
+[class*="st-key-tile_"]:active, [class*="st-key-tile_"]:has(button:active),
+[class*="st-key-grp_"]:active, [class*="st-key-grp_"]:has(button:active) { transform: scale(.94); background: rgba(255,75,75,.18); }
 /* While the app is working, tiles dim and ignore taps, so an extra tap can't get lost or close the panel */
-.stApp[data-test-script-state="running"] [class*="st-key-tile_"] { opacity: .5; }
+.stApp[data-test-script-state="running"] [class*="st-key-tile_"],
+.stApp[data-test-script-state="running"] [class*="st-key-grp_"] { opacity: .5; }
+.stApp[data-test-script-state="running"] [class*="st-key-gb_"] button,
 .stApp[data-test-script-state="running"] [class*="st-key-pi_"] button,
 .stApp[data-test-script-state="running"] [class*="st-key-ni_pick_"] { pointer-events: none; }
-[class*="st-key-tile_"].gt-pressed { transform: scale(.94); background: rgba(255,75,75,.18); opacity: 1 !important; }
+[class*="st-key-tile_"].gt-pressed, [class*="st-key-grp_"].gt-pressed { transform: scale(.94); background: rgba(255,75,75,.18); opacity: 1 !important; }
 [class*="st-key-tile_"] [data-testid="stMarkdown"], [class*="st-key-tile_"] [data-testid="stMarkdownContainer"],
 [class*="st-key-tile_"] [data-testid="stMarkdownContainer"] p { margin: 0 !important; }
 [class*="st-key-pi_"] { position: absolute !important; inset: 0 !important; width: auto !important; z-index: 5; margin: 0; }
@@ -134,9 +225,59 @@ TAP_JS = """<script>
   ['pointerdown', 'mousedown', 'touchstart', 'click', 'pointerup', 'mouseup', 'touchend'].forEach(
     type => doc.addEventListener(type, guard, { capture: true, passive: false }));
   doc.addEventListener('pointerdown', e => {
-    const tile = e.target.closest && e.target.closest('[class*="st-key-tile_"]');
+    const tile = e.target.closest && e.target.closest('[class*="st-key-tile_"], [class*="st-key-grp_"]');
     if (tile) tile.classList.add('gt-pressed');
   }, true);
+
+  // Long-press a group: its items pop up; slide your thumb to one and let go to open it.
+  let timer = null, menu = null, startX = 0, startY = 0, swallowClick = false;
+  const gidOf = el => { const m = (el.className.match(/st-key-grp_(\\S+)/) || [])[1]; return m; };
+  const close = () => { if (menu) menu.remove(); menu = null; };
+  const rowAt = (x, y) => { const el = doc.elementFromPoint(x, y); return el && el.closest && el.closest('#gt-menu div'); };
+  const open = (tile, x, y) => {
+    const gid = gidOf(tile); if (!gid) return;
+    const buttons = [...doc.querySelectorAll(`.st-key-gh_${gid} button`)];
+    if (!buttons.length) return;
+    tile.classList.remove('gt-pressed');
+    menu = doc.createElement('div'); menu.id = 'gt-menu';
+    buttons.forEach(b => { const row = doc.createElement('div'); row.textContent = b.innerText; row._button = b; menu.appendChild(row); });
+    doc.body.appendChild(menu);
+    const h = menu.offsetHeight, w = menu.offsetWidth, vw = doc.documentElement.clientWidth;
+    menu.style.left = Math.max(8, Math.min(vw - w - 8, x - w / 2)) + 'px';
+    menu.style.top = (y - h - 24 > 8 ? y - h - 24 : y + 24) + 'px';
+    if (navigator.vibrate) navigator.vibrate(15);
+  };
+  doc.addEventListener('touchstart', e => {
+    const tile = e.target.closest && e.target.closest('[class*="st-key-grp_"]');
+    if (!tile || e.touches.length > 1) return;
+    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => { open(tile, startX, startY); }, 450);
+  }, { capture: true, passive: true });
+  doc.addEventListener('touchmove', e => {
+    const t = e.touches[0];
+    if (!menu) {  // moving before the long-press: it's a scroll
+      if (Math.hypot(t.clientX - startX, t.clientY - startY) > 10) clearTimeout(timer);
+      return;
+    }
+    e.preventDefault();
+    const row = rowAt(t.clientX, t.clientY);
+    menu.querySelectorAll('div').forEach(d => d.classList.toggle('on', d === row));
+  }, { capture: true, passive: false });
+  doc.addEventListener('touchend', e => {
+    clearTimeout(timer);
+    if (!menu) return;
+    e.preventDefault(); e.stopPropagation();
+    const t = e.changedTouches[0];
+    const row = rowAt(t.clientX, t.clientY);
+    close();
+    doc.querySelectorAll('.gt-pressed').forEach(x => x.classList.remove('gt-pressed'));
+    if (row && row._button) row._button.click();  // "tap" that item's hidden button
+    swallowClick = true;  // then ignore the tap the phone may still send to the group tile
+    setTimeout(() => { swallowClick = false; }, 400);
+  }, { capture: true, passive: false });
+  doc.addEventListener('click', e => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+  doc.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('[class*="st-key-grp_"]')) e.preventDefault(); }, true);
 })();
 </script>"""
 COLORS = {"green": ("#21C35433", "#3DD56D"), "orange": ("#FFA42133", "#FFBD45"), "red": ("#FF4B4B33", "#FF6C6C")}
