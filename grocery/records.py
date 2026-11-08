@@ -470,8 +470,13 @@ def move_to_item(product_id, item_name):
     if not product or not item_name:
         return None
     old = next((i for i in items() if i["item_id"] == product.get("item_id")), {})
-    if not product.get("storage") and old.get("storage"):  # it stays where it is when its group changes
-        sheets.update_rows("products", "product_id", {product_id: {"storage": old["storage"]}})
+    keep = {}  # what the product had through its old group stays with it: where it's kept and its picture
+    if not product.get("storage") and old.get("storage"):
+        keep["storage"] = old["storage"]
+    if not product.get("photo_url") and old.get("photo_url") not in ("", "none", None):
+        keep["photo_url"] = old["photo_url"]  # loose fruit kept its picture on its own group
+    if keep:
+        sheets.update_rows("products", "product_id", {product_id: keep})
     target = next((i for i in items() if norm(i["name"]) == norm(item_name)), None)
     if target is None:
         target = dict(old, item_id=readable_id(slug(item_name), taken_ids("items", "item_id")), name=item_name,
@@ -736,7 +741,7 @@ def completeness(product, item, batch):
     """[(what, filled?)] for the profile bar: what's known about this purchase's product and item."""
     item, batch = item or {}, batch or {}
     packaged = bool(product) and product.get("packaged") != "no"
-    photo = (product or {}).get("photo_url") if packaged else item.get("photo_url") not in ("", "none", None)
+    photo = (product or {}).get("photo_url") or (not packaged and item.get("photo_url") not in ("", "none", None))
     checks = [("photo", bool(photo)), ("kept in", bool((product or {}).get("storage") or item.get("storage")))]
     if product:  # which group it belongs to (things you use interchangeably), confirmed by you
         checks.append(("group", product.get("group_status") == "ok"))
@@ -877,9 +882,20 @@ def item_picture(*titles):
         return ""
 
 
+def group_picture(item):
+    """A group's picture: the first photo of a product in it (your own sausages, not a generic one), else the
+    group's generic picture, else "" (its emoji shows)."""
+    rows = sorted((p for p in products() if p.get("item_id") == item.get("item_id") and p.get("photo_url")),
+                  key=lambda p: p.get("created_at", ""))
+    if rows:
+        return rows[0]["photo_url"]
+    return item.get("photo_url") if item.get("photo_url") not in ("", "none", None) else ""
+
+
 def fill_missing_item_pictures(limit=3):
-    """Look up pictures for items saved before pictures existed (a few per visit)."""
-    todo = [i for i in items() if not i.get("photo_url")][:limit]
+    """Look up generic pictures for groups that have none and no product photo either (a few per visit)."""
+    with_photo = {p.get("item_id") for p in products() if p.get("photo_url")}
+    todo = [i for i in items() if not i.get("photo_url") and i["item_id"] not in with_photo][:limit]
     changes = {}
     for i in todo:
         pic = item_picture(i["name"])

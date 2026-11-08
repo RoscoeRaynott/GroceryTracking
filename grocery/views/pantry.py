@@ -146,9 +146,9 @@ def _group_tile(members, lookable):
 def _group_html(members, is_open):
     first = members[0]
     item = first["item"]
-    url = item.get("photo_url") if item.get("photo_url") not in ("", "none", None) else ""
-    for r in members:  # the group's picture: its own, else the first product photo in it
-        url = url or (r["product"] or {}).get("photo_url") or ""
+    # The group's picture: a photo of one of the products in it here, else the group's own picture.
+    url = next(((r["product"] or {}).get("photo_url") for r in members if (r["product"] or {}).get("photo_url")), "") \
+        or records.group_picture(item)
     url = picture_file(url)
     picture = (f'<img src="{html.escape(url)}" style="width:70px;height:70px;object-fit:contain">' if url else
                f'<span style="font-size:46px;line-height:70px">{item.get("emoji") or "🛒"}</span>')

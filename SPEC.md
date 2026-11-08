@@ -620,3 +620,8 @@ _Status: gathering requirements. No code until the plan is approved._
 - For later (shelf life): learn shelf life per group **and** place.
 
 - The page script that handles taps carries a version number, so an open page switches to a newer copy without a reload.
+
+## Group pictures (built, step 4)
+- A group's picture is the first photo of a product in it (your own soda can), else its generic picture, else its emoji. Used by Pantry group tiles and the Insights header.
+- Generic Wikipedia pictures are only fetched for groups with no product photo at all.
+- Moving a product to another group keeps its picture: loose fruit, whose picture lived on its old single-item group, takes that picture along.

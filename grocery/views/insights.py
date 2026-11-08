@@ -59,7 +59,7 @@ def _products(item):
 def _picture(item):
     """The item's picture, with a way to swap it if two items look alike."""
     with st.container(horizontal=True, vertical_alignment="center"):
-        product_ui.photo(None, item.get("emoji", ""), width=72, item=item)
+        product_ui.photo({"photo_url": records.group_picture(item)}, item.get("emoji", ""), width=72)
         st.markdown(f"### {item['name']}")
         with st.popover("Change picture", icon=":material/image:", key=f"pic_{item['item_id']}"):
             word = st.text_input("Picture of…", key=f"picq_{item['item_id']}",
