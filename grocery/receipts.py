@@ -77,6 +77,7 @@ Return only JSON:
               ml for other liquids like egg whites or juice, loads for detergent),
       "storage": one of {storage} (where it is usually kept; "Open air" means pantry/counter),
       "perishable": true or false,
+      "alcohol": true if it is an alcoholic drink (beer, wine, hard seltzer, spirits, sake, hard cider…), else false,
       "emoji": one food emoji for the item, or "" if none fits,
       "wiki": the English Wikipedia article title that best pictures this generic item (e.g. "Egg white",
               "Catla" for katla fish, "Ilish" for hilsa, "Half and half"), or "",

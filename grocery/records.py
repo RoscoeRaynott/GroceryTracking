@@ -95,6 +95,7 @@ def save_purchase(review, finished, draft_id, readings):
                 "unit": card["unit"], "storage": card["storage"], "emoji": card.get("emoji", ""),
                 "tracked": card["kind"] != "One-time", "created_at": now,
                 "photo_url": item_picture(card.get("wiki"), card["item"]),
+                "alcohol": "yes" if card.get("alcohol") or looks_alcoholic(card["item"], card.get("product", "")) else "",
             }
             known[norm(row["name"])] = {k: sheets._cell(v) for k, v in row.items()}
             new_items.append(row)
@@ -408,6 +409,31 @@ def products():
     return sheets.read_tab("products")
 
 
+ALCOHOL_WORDS = re.compile(
+    r"\b(beer|ale|lager|ipa|stout|porter|pilsner|hefeweizen|wine|merlot|cabernet|chardonnay|pinot|sauvignon|riesling|"
+    r"malbec|zinfandel|moscato|prosecco|champagne|cava|sangria|sake|soju|vodka|whiske?y|bourbon|scotch|rum|gin|tequila|"
+    r"mezcal|brandy|cognac|liqueur|vermouth|hard seltzer|hard cider|hard tea|spiked|white claw|truly|high noon|"
+    r"twisted tea|mike'?s hard|modelo|corona|heineken|budweiser|michelob|coors|stella artois)\b", re.I)
+NOT_ALCOHOL = re.compile(r"non[- ]?alcoholic|alcohol[- ]free|\b0\.0\b|\bvinegar\b|ginger ale|root beer", re.I)
+
+
+def looks_alcoholic(*names):
+    text = " ".join(str(n or "") for n in names)
+    return bool(ALCOHOL_WORDS.search(text)) and not NOT_ALCOHOL.search(text)
+
+
+def is_alcohol(product, item):
+    """An alcoholic drink? Your 🍷 choice (or the AI's when it was bought) wins; else well-known words decide."""
+    flag = (item or {}).get("alcohol")
+    if flag in ("yes", "no"):
+        return flag == "yes"
+    return looks_alcoholic((item or {}).get("name"), (product or {}).get("name"), (product or {}).get("brand"))
+
+
+def set_abv(product_id, abv):
+    sheets.update_rows("products", "product_id", {product_id: {"abv": abv}})
+
+
 def storage_of(product, item):
     """Where it's kept: the product's own place (a frozen brand stays in the freezer), else its group's usual one."""
     return (product or {}).get("storage") or (item or {}).get("storage") or "Open air"
@@ -622,7 +648,7 @@ def set_barcode(product_id, barcode):
 
 
 LOOKUP_NEEDS = {"photo": "photo", "brand": "brand", "pack size": "pack", "ingredients": "ingredients",
-                "nutrition": "nutrition"}
+                "nutrition": "nutrition", "ABV": "abv"}
 MISS_DAYS = 30
 
 
@@ -753,6 +779,8 @@ def completeness(product, item, batch):
         no_label = product.get("info_status") == "none"
         checks += [("brand", bool(product.get("brand")) or product.get("no_brand") == "yes"),
                    ("pack size", bool(_float(product.get("pack_size"))) or product.get("pack_varies") == "yes")]
+        if item.get("kind", "Food") == "Food" and is_alcohol(product, item):  # so Insights can count alcohol
+            checks.append(("ABV", bool(_float(product.get("abv")))))
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
                 ("ingredients", bool(product.get("ingredients")) or no_label),

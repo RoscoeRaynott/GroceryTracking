@@ -111,6 +111,8 @@ def _panel(bid):
         _bought(batch, product)
         if product:
             _pack(product, item)
+            if records.is_alcohol(product, item):
+                _abv(product, item)
             _group(product, item)
             product_ui.merge(product, f"ii_merge_{product['product_id']}", label="Merge",
                              on_done=lambda plan: _after_merge(plan, bid))
@@ -496,6 +498,13 @@ def _kept(item, product=None):
                 records.set_item(item["item_id"], storage=choice)
             st.toast(f"Kept in {choice} from now on")
             _refresh()
+        if kind == "Food":
+            drink = records.is_alcohol(product, item)
+            if st.toggle("🍷 Alcoholic drink", value=drink, key=_k(f"ii_alc_{item['item_id']}", drink),
+                         help=f"For the whole group ({item.get('name', '')}): its ABV is looked up so Insights can count alcohol") != drink:
+                records.set_item(item["item_id"], alcohol="no" if drink else "yes")
+                st.toast("Alcoholic drink: ABV will be looked up" if not drink else "Not an alcoholic drink")
+                _refresh()
         goes_bad = st.toggle("Goes bad (perishable)", value=perishable, key=_k(f"ii_per_{item['item_id']}", perishable),
                              help=f"For the whole group ({item.get('name', '')})")
         change = {}
@@ -746,6 +755,26 @@ def _after_merge(plan, bid):
     if kept:
         st.session_state[OPEN] = kept
         st.rerun()  # the whole page: one tile fewer, and the panel reopens on the purchase that was kept
+
+
+def _abv(product, item):
+    """🍷 % alcohol, and how much pure alcohol one pack holds (what Insights will add up)."""
+    pid = product["product_id"]
+    abv = records._float(product.get("abv"))
+    with st.popover(f"🍷 {abv:g}% ABV" if abv else "🍷 ABV?", key=f"ii_abvpop_{pid}"):
+        st.caption("Alcohol by volume, as printed on the can or bottle. A lookup or label photo fills it too.")
+        new = st.number_input("ABV %", value=abv, min_value=0.0, max_value=100.0, step=0.1, format="%g",
+                              key=_k(f"ii_abv_{pid}", abv), placeholder="e.g. 5")
+        size, unit = records._float(product.get("pack_size")), product.get("pack_unit") or item.get("unit")
+        floz = records.convert(size, unit, "fl oz") if size and unit else None
+        if new and floz:
+            pure = floz * new / 100
+            st.markdown(f":blue-badge[One pack: {floz:g} fl oz × {new:g}% = {pure:.1f} fl oz of pure alcohol]  \n"
+                        f":gray[≈ {pure / 0.6:.1f} standard US drinks (0.6 fl oz each)]")
+        if new and new != abv and st.button("Save", key=f"ii_abvsave_{pid}", type="primary"):
+            records.set_abv(pid, round(new, 2))
+            st.toast(f"ABV: {new:g}%")
+            _refresh()
 
 
 NEW_GROUP = "➕ New group…"

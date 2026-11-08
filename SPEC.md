@@ -628,6 +628,11 @@ _Status: gathering requirements. No code until the plan is approved._
 
 ## AI costs (built)
 - Every AI call now logs, besides input/output tokens: **thinking tokens** (billed as output; were never recorded), **search-result tokens** the model read (billed as input), the number of **Google searches** it ran (each billed), and its **cost** (ai_log `thought_tokens`, `tool_tokens`, `searches`, `cost_usd`).
-- Prices are editable in Settings → AI prices (`ai_prices` "model=in/out" per 1M tokens; `price_per_1000_searches`). Defaults from third-party lists (Nov 2026): 3.8 Flash $0.75/$3.75, 3.5 Flash-Lite $0.30/$2.50, $14 per 1,000 searches; to be checked against Google's page. A model with no price uses the dearest one, so costs aren't understated. Google's free monthly searches aren't subtracted.
+- Prices are editable in Settings → AI prices (`ai_prices` "model=in/out" per 1M tokens; `price_per_1000_searches`). Defaults match Google's pricing page (checked Nov 2026): 3.8 Flash $0.75/$3.75 until Dec 31, 2026, then $1.50/$7.50 from Jan 1, 2027 (update the setting then); 3.5 Flash-Lite $0.30/$2.50; Google Search grounding: 5,000 free a month, then $14 per 1,000, billed per search query, capped at 1,500 a day. A model with no price uses the dearest one, so costs aren't understated. Google's free monthly searches aren't subtracted.
 - **After each action a 💸 pop-up** says what its AI calls cost, with the number of Google searches and the biggest tasks.
 - **Settings → 💸 AI costs:** today / 7 / 30 days / all: total, calls, searches; a bar per kind of task (cost and count); cost per use; cost by day; the last 30 calls. Older rows (before this) lack thinking and searches, so they're marked as low estimates.
+
+## Alcoholic drinks and ABV (built)
+- **Spotting them:** the receipt and voice AI mark each new item as an alcoholic drink or not (items `alcohol`; no extra AI call). Items without a mark are judged by well-known words (beer, wine, vodka, hard seltzer, White Claw…; not ginger ale, root beer, non-alcoholic). A **🍷 Alcoholic drink** switch in the ❄️ chip corrects it for the whole group.
+- **ABV is needed for them:** the bar shows **ABV?** until known; it counts for Needs info and Look up all. The free barcode database's alcohol % is read; web lookups are told ABV matters most for drinks (also in the split lookup); label photos already read it.
+- **🍷 chip** in the item panel: edit the ABV; shows pure alcohol per pack (e.g. 12 × 12 fl oz at 5% = 7.2 fl oz ≈ 12 US standard drinks of 0.6 fl oz) — what Insights will add up later.

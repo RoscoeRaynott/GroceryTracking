@@ -10,6 +10,7 @@ TABS = {
         "item_id", "name", "kind", "perishable", "unit", "storage",
         "emoji", "tracked", "created_at", "photo_url",
         "no_expiry",  # "yes": no date is printed on it (avocados); its lifespan comes from your own history
+        "alcohol",  # "yes": an alcoholic drink (its ABV is looked up, so Insights can count alcohol); "no": not
     ],
     "products": [
         "product_id", "item_id", "item", "brand", "name", "barcode", "packaged",

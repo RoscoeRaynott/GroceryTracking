@@ -88,6 +88,8 @@ Goal 1, the one that matters most: FIND THE PRODUCT.
   IS the product, even if the size differs from what we know; report the size you found.
 - The user's words may be informal or regional (e.g. in South Asian usage "mutton" usually means goat).
 Goal 2, a bonus: its ingredients list and Nutrition Facts, from that product's page or the maker's page.
+For an ALCOHOLIC drink (beer, wine, hard seltzer, spirits…), its ABV (% alcohol by volume) matters most: report it
+in "abv" from the maker's or store's page.
 Many spices, imported foods and raw meat/fish/produce publish none. That is fine: still report the
 product as found and leave the label info empty. Never fill in values from a different product.
 Return only JSON, no other text:
@@ -205,7 +207,9 @@ def _from_off(p, url):
         source="Open Food Facts", url=url, name=p.get("product_name", ""), brand=brand,
         barcode=p.get("code", ""), serving_size=p.get("serving_size") or "",
         servings_per_pack=None, ingredients=p.get("ingredients_text") or "",
-        nutrients=nutrients, abv=None, photo_url=p.get("image_front_url") or "",
+        nutrients=nutrients, abv=_num(nutriments.get("alcohol_100g") or nutriments.get("alcohol_value")
+                                      or nutriments.get("alcohol")) or None,
+        photo_url=p.get("image_front_url") or "",
         quantity=p.get("quantity") or "",
     )
 
@@ -449,7 +453,8 @@ LAB_PROMPTS = {
 {{"product_found": true/false, "matched_name": full name as listed, "matched_brand": brand or "",
   "matched_url": product page URL, "image_url": direct URL of its main photo or "",
   "pack_text": pack size as listed or "", "pack_count": how many units in one pack (2-pack = 2),
-  "each_in_unit": {unit} in one of those units, or null, "reason": one sentence}}""",
+  "each_in_unit": {unit} in one of those units, or null,
+  "abv": % alcohol by volume if it is an alcoholic drink, else null, "reason": one sentence}}""",
     "nutrition": """Find the Nutrition Facts for this grocery product. What we know: {query}
 {store_rule}Use a few short searches. Report only numbers, never copy text. Return only JSON:
 {{"found": true/false, "serving_size": short, e.g. "3/4 cup (170g)", "servings_per_pack": number or null,
@@ -501,7 +506,7 @@ def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None
         if x and x.lower() not in {y.lower() for y in ingredients}:
             ingredients.append(x)  # sub-recipes repeat salt, sugar…: keep the first
     info = {"serving_size": n.get("serving_size") or "", "servings_per_pack": n.get("servings_per_pack"),
-            "nutrients": n.get("nutrients") or {}, "ingredients": ", ".join(ingredients)}
+            "nutrients": n.get("nutrients") or {}, "ingredients": ", ".join(ingredients), "abv": p.get("abv")}
     reply = dict(p, info=info, has_label_info=bool(info["nutrients"] or ingredients),
                  reason=(p.get("reason") or "") + " (Label text was blocked, so it was fetched in parts.)")
     return reply, sources + [s for s in n_src + i_src if s not in sources]
@@ -540,13 +545,13 @@ def identify_then_search(model, found, unit="each", store="", needs=None):
     return merged
 
 
-ALL_NEEDS = frozenset({"photo", "brand", "pack", "ingredients", "nutrition"})
+ALL_NEEDS = frozenset({"photo", "brand", "pack", "ingredients", "nutrition"})  # + "abv" for alcoholic drinks
 
 
 def still_missing(info, needs):
     """Which of `needs` (photo, brand, pack, ingredients, nutrition) this result doesn't give."""
     has = {"photo": info.get("photo_url"), "brand": info.get("brand"), "pack": info.get("pack_units"),
-           "ingredients": info.get("ingredients"), "nutrition": info.get("nutrients")}
+           "ingredients": info.get("ingredients"), "nutrition": info.get("nutrients"), "abv": info.get("abv")}
     return {n for n in needs if not has.get(n)}
 
 
