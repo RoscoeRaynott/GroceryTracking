@@ -60,7 +60,7 @@ differently, e.g. "KS WATER 40PK" = "Kirkland Signature Purified Drinking Water,
 set "product_ref" to its ref and use its item. Different brands or variants are NOT the same product.
 {products}
 
-RECEIPT LINES (index: kind | text | quantity | amount):
+{mixed_rule}RECEIPT LINES (index: kind | text | quantity | amount):
 {lines}
 
 Return only JSON:
@@ -130,7 +130,7 @@ def merge(readings):
     """
     merged, questions = [], []
     for photo_no, reading in enumerate(readings, start=1):
-        lines = [dict(l, photo=photo_no) for l in reading.get("lines", [])]
+        lines = [dict(l, photo=photo_no, src=reading.get("source_type") or "") for l in reading.get("lines", [])]
         if not merged:
             merged = lines
             continue
@@ -173,21 +173,33 @@ def apply_answers(merged, questions, answers):
     return merged
 
 
+MIXED_RULE = """IMPORTANT: these lines come from TWO views of the SAME purchase: the printed receipt [paper] and
+screenshots of the same order in the store's app [app], which show more detail (full names, sizes, pictures).
+Every thing bought appears in BOTH. Make exactly ONE item per thing bought and put ALL of its lines (the paper
+line and the app line, plus discounts) in its "lines". Use the app's full product name and size; the price is
+the same thing paid once (if the two disagree, use the paper receipt's and mark it unclear). Never count a
+thing twice. A line found in only one view is still one item.
+"""
+
+
 def interpret(model, store, source_type, merged, items, product_refs=None, on_text=None):
     """Receipt lines -> items. product_refs = {ref: product row} the AI may match lines to;
     on_text(reply so far) is called while the reply streams in (for live progress)."""
     item_lines = "\n".join(
         f"{i['name']} | {i['kind']} | {i['unit']} | {i['storage']} | {i['perishable']}" for i in items
     ) or "(none yet)"
+    mixed = len({l.get("src") for l in merged if l.get("src")}) > 1  # a paper receipt plus app screenshots
+    tag = {"printed_receipt": "[paper] ", "app_screenshot": "[app] "}
     line_text = "\n".join(
-        f"{n}: {l.get('kind')} | {l.get('text')} | {l.get('quantity')} {l.get('quantity_unit') or ''} | {l.get('amount')}"
+        f"{n}: {tag.get(l.get('src'), '') if mixed else ''}{l.get('kind')} | {l.get('text')} | "
+        f"{l.get('quantity')} {l.get('quantity_unit') or ''} | {l.get('amount')}"
         for n, l in enumerate(merged)
     )
     from grocery import voice  # local import: voice imports records, which imports this module's users
     prompt = INTERPRET_PROMPT.format(
         store=store or "unknown", source_type=source_type or "unknown", items=item_lines,
         products=voice.products_text(product_refs or {}),
-        lines=line_text, kinds=KINDS, units=UNITS, storage=STORAGE,
+        lines=line_text, kinds=KINDS, units=UNITS, storage=STORAGE, mixed_rule=MIXED_RULE if mixed else "",
     )
     return gemini.generate_json("receipt_items", model, prompt, on_text=on_text)
 
