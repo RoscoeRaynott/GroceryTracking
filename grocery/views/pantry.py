@@ -136,10 +136,11 @@ def _group_tile(members, lookable):
                 if st.button(f"{records.short_name(r['product'], r['item'])} · {r['days_open']}d",
                              key=f"pj_{b['batch_id']}"):
                     item_info.open_panel(b["batch_id"])
-    if is_open:  # its items, on their own row right under the group
-        with st.container(horizontal=True, gap="small", key=f"grpopen_{gid}"):
-            for r in members:
-                _tile(r, (r["product"] or {}).get("product_id") in lookable)
+    # Its items, on their own row right under the group. Always drawn but hidden, so the phone can show them
+    # instantly when the group is tapped (no trip to the server); "grpshown" = opened by the server instead.
+    with st.container(horizontal=True, gap="small", key=f"{'grpshown' if is_open else 'grpopen'}_{gid}"):
+        for r in members:
+            _tile(r, (r["product"] or {}).get("product_id") in lookable)
 
 
 def _group_html(members, is_open):
@@ -179,8 +180,11 @@ TILE_CSS = """<style>
 [class*="st-key-gb_"] button { opacity: 0; touch-action: manipulation; }
 [class*="st-key-gh_"] { display: none !important; }
 /* An open group: its items on their own row, on a soft band */
-[data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]) { flex: 0 0 100% !important; width: 100% !important; max-width: 100% !important; }
-[class*="st-key-grpopen_"] { width: 100% !important; background: rgba(255,75,75,.08); border-radius: 10px; padding: 6px; }
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]),
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpshown_"]) { flex: 0 0 100% !important; width: 100% !important; max-width: 100% !important; }
+[data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]):not(.gt-open) { display: none !important; }
+[class*="st-key-grpopen_"], [class*="st-key-grpshown_"] { width: 100% !important; background: rgba(255,75,75,.08);
+  border-radius: 10px; padding: 6px; }
 /* The long-press menu */
 #gt-menu { position: fixed; z-index: 100000; background: #262730; color: #FAFAFA; border-radius: 12px; padding: 6px;
   box-shadow: 0 8px 24px rgba(0,0,0,.45); min-width: 200px; max-width: 80vw; font: 15px sans-serif; }
@@ -209,25 +213,34 @@ TILE_CSS = """<style>
 #   can't close the panel it just opened.
 TAP_JS = """<script>
 (() => {
-  if (window.__gtTaps) return; window.__gtTaps = true;
+  const VERSION = 3;  // bump when this script changes, so an open page picks up the new one without a reload
+  if (window.__gtTapsVersion === VERSION) return; window.__gtTapsVersion = VERSION;
+  if (window.__gtTapsStop) window.__gtTapsStop();  // switch off an older copy of this script
+  const listeners = [];
+  const on = (type, fn, opts) => { doc.addEventListener(type, fn, opts); listeners.push([type, fn, opts]); };
   const doc = window.parent && window.parent.document ? window.parent.document : document;
   let openedAt = 0, hadDialog = false;
-  new MutationObserver(() => {
+  const openGroups = new Set();  // groups opened on the phone: kept open across the app's redraws
+  const observer = new MutationObserver(() => {
+    openGroups.forEach(gid => { const row = doc.querySelector(`.st-key-grpopen_${gid}`);
+      if (row && row.parentElement) row.parentElement.classList.add('gt-open'); });
     const has = !!doc.querySelector('[role="dialog"]');
     if (has && !hadDialog) openedAt = Date.now();
     hadDialog = has;
     const app = doc.querySelector('.stApp');
     if (app && app.getAttribute('data-test-script-state') !== 'running')
       doc.querySelectorAll('.gt-pressed').forEach(t => t.classList.remove('gt-pressed'));
-  }).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-test-script-state'] });
+  });
+  observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-test-script-state'] });
+  window.__gtTapsStop = () => { observer.disconnect(); listeners.forEach(([t, f, o]) => doc.removeEventListener(t, f, o)); };
   const guard = e => {
     if (Date.now() - openedAt < 800 && !(e.target.closest && e.target.closest('[role="dialog"]'))) {
       e.stopPropagation(); e.preventDefault();
     }
   };
   ['pointerdown', 'mousedown', 'touchstart', 'click', 'pointerup', 'mouseup', 'touchend'].forEach(
-    type => doc.addEventListener(type, guard, { capture: true, passive: false }));
-  doc.addEventListener('pointerdown', e => {
+    type => on(type, guard, { capture: true, passive: false }));
+  on('pointerdown', e => {
     const tile = e.target.closest && e.target.closest('[class*="st-key-tile_"], [class*="st-key-grp_"]');
     if (tile) tile.classList.add('gt-pressed');
   }, true);
@@ -250,14 +263,14 @@ TAP_JS = """<script>
     menu.style.top = (y - h - 24 > 8 ? y - h - 24 : y + 24) + 'px';
     if (navigator.vibrate) navigator.vibrate(15);
   };
-  doc.addEventListener('touchstart', e => {
+  on('touchstart', e => {
     const tile = e.target.closest && e.target.closest('[class*="st-key-grp_"]');
     if (!tile || e.touches.length > 1) return;
     startX = e.touches[0].clientX; startY = e.touches[0].clientY;
     clearTimeout(timer);
     timer = setTimeout(() => { open(tile, startX, startY); }, 450);
   }, { capture: true, passive: true });
-  doc.addEventListener('touchmove', e => {
+  on('touchmove', e => {
     const t = e.touches[0];
     if (!menu) {  // moving before the long-press: it's a scroll
       if (Math.hypot(t.clientX - startX, t.clientY - startY) > 10) clearTimeout(timer);
@@ -267,7 +280,7 @@ TAP_JS = """<script>
     const row = rowAt(t.clientX, t.clientY);
     menu.querySelectorAll('div').forEach(d => d.classList.toggle('on', d === row));
   }, { capture: true, passive: false });
-  doc.addEventListener('touchend', e => {
+  on('touchend', e => {
     clearTimeout(timer);
     if (!menu) return;
     e.preventDefault(); e.stopPropagation();
@@ -279,8 +292,20 @@ TAP_JS = """<script>
     swallowClick = true;  // then ignore the tap the phone may still send to the group tile
     setTimeout(() => { swallowClick = false; }, 400);
   }, { capture: true, passive: false });
-  doc.addEventListener('click', e => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
-  doc.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('[class*="st-key-grp_"]')) e.preventDefault(); }, true);
+  on('click', e => {
+    if (swallowClick) { e.stopPropagation(); e.preventDefault(); return; }
+    // Tapping a group opens / closes its items right here on the phone: instant, no trip to the server.
+    const btn = e.target.closest && e.target.closest('[class*="st-key-gb_"]');
+    const gid = btn && (btn.className.match(/st-key-gb_(\\S+)/) || [])[1];
+    const row = gid && doc.querySelector(`.st-key-grpopen_${gid}`);
+    if (!row || !row.parentElement) return;  // opened by the server instead: let the tap through
+    e.stopPropagation(); e.preventDefault();
+    const wrap = row.parentElement, opening = !wrap.classList.contains('gt-open');
+    wrap.classList.toggle('gt-open', opening);
+    if (opening) openGroups.add(gid); else openGroups.delete(gid);
+    doc.querySelectorAll('.gt-pressed').forEach(x => x.classList.remove('gt-pressed'));
+  }, true);
+  on('contextmenu', e => { if (e.target.closest && e.target.closest('[class*="st-key-grp_"]')) e.preventDefault(); }, true);
 })();
 </script>"""
 COLORS = {"green": ("#21C35433", "#3DD56D"), "orange": ("#FFA42133", "#FFBD45"), "red": ("#FF4B4B33", "#FF6C6C")}
