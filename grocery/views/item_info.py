@@ -754,8 +754,19 @@ def _group(product, item):
         options = groups + [NEW_GROUP]
         pick = st.selectbox("Group", options, index=options.index(current) if current in options else 0,
                             key=_k(f"ii_group_{pid}", current), label_visibility="collapsed")
-        name = st.text_input("New group name", key=f"ii_groupnew_{pid}",
-                             placeholder="e.g. Sausages, Biryani Masala").strip() if pick == NEW_GROUP else pick
+        if pick == NEW_GROUP:
+            # The button is always there: tapping it also takes what you typed (no need to press Enter first).
+            name = st.text_input("New group name", key=f"ii_groupnew_{pid}",
+                                 placeholder="e.g. Sausages, Biryani Masala").strip()
+            if st.button("Create group and move", key=f"ii_groupcreate_{pid}", type="primary"):
+                if not name:
+                    st.warning("Type the group's name first.")
+                else:
+                    records.set_group(pid, name)
+                    st.toast(f"New group: {name}")
+                    _refresh()
+            return
+        name = pick
         if name and records.norm(name) != records.norm(current):
             if st.button(f"Move to {name}", key=f"ii_groupsave_{pid}", type="primary"):
                 records.set_group(pid, name)
