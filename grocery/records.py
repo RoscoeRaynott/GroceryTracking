@@ -476,6 +476,13 @@ Products (ref | current group | brand | product name):
 Return only JSON: {{"ref": "group name", ...}} with one entry per product ref."""
 
 
+def groups():
+    """Group names in use: an item that at least one product or live purchase is in. A group emptied by moving
+    its last product away disappears at once (a deleted purchase may still point to it, only for Undo)."""
+    used = {p.get("item_id") for p in products()} | {b.get("item_id") for b in live_batches()}
+    return sorted({i["name"] for i in items() if i.get("name") and i["item_id"] in used}, key=str.lower)
+
+
 def suggest_groups(model, limit=80):
     """One AI call that suggests a group for every product whose group you haven't confirmed and that has no
     suggestion yet. Saved on the product (group_suggestion), so it's asked once per product."""
@@ -483,15 +490,15 @@ def suggest_groups(model, limit=80):
     rows = [p for p in products() if p.get("group_status") != "ok" and not p.get("group_suggestion")][:limit]
     if not rows:
         return 0
-    groups = sorted({i["name"] for i in items() if i.get("name")})
+    names = groups()
     refs = {f"p{n}": p for n, p in enumerate(rows, start=1)}
     lines = "\n".join(f"{ref} | {p.get('item', '')} | {p.get('brand', '')} | {p['name']}" for ref, p in refs.items())
     try:
         reply = gemini.generate_json("group_suggest", model, GROUP_PROMPT.format(
-            groups="\n".join(groups) or "(none yet)", products=lines))
+            groups="\n".join(names) or "(none yet)", products=lines))
     except Exception:
         return 0
-    known = {norm(g): g for g in groups}
+    known = {norm(g): g for g in names}
     change = {}
     for ref, p in refs.items():
         name = reply.get(ref) if isinstance(reply, dict) else None

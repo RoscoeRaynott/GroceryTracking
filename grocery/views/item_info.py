@@ -741,7 +741,7 @@ def _group(product, item):
     with st.popover(f"🗂 {current}" + ("" if ok else " ?"), key=f"ii_grouppop_{pid}"):
         st.caption("Group: things you use interchangeably, whatever the brand. They share one shelf life and "
                    "are counted together in Insights.")
-        groups = sorted({i["name"] for i in records.items() if i.get("name")}, key=str.lower)
+        groups = records.groups()
         if suggestion and records.norm(suggestion) != records.norm(current):
             new = not any(records.norm(g) == records.norm(suggestion) for g in groups)
             if st.button(f"✨ Use AI's pick: {suggestion}" + (" (new group)" if new else ""), key=f"ii_groupai_{pid}",
