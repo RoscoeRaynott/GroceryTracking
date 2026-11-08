@@ -88,7 +88,13 @@ def merge(product, key, label="Same as a product I have", on_done=None):
     """“Same as a product I have”: fold this duplicate into the right product, after a preview.
     on_done(plan) runs after merging (e.g. to keep the item panel open on the purchase that was kept)."""
     others = [p for p in records.products() if p["product_id"] != product["product_id"]]
-    if not others:
+    # Same product bought more than once the same day (the store rang it up twice): offer to combine them.
+    mine_open = [b for b in records.live_batches() if b.get("product_id") == product["product_id"] and b.get("status") == "open"]
+    days = {}
+    for b in mine_open:
+        days.setdefault((b.get("purchased_on"), records.norm(b.get("store", ""))), []).append(b)
+    twins = sum(len(v) for v in days.values() if len(v) > 1)
+    if not others and not twins:
         return
     # Likely duplicates first: bought the same day (the store scanned it twice), then the same group.
     mine = {(b.get("purchased_on"), b.get("store")) for b in records.live_batches() if b.get("product_id") == product["product_id"]}
@@ -96,6 +102,17 @@ def merge(product, key, label="Same as a product I have", on_done=None):
     others.sort(key=lambda p: (p["product_id"] not in same_day, p.get("item_id") != product.get("item_id"),
                                p.get("item", ""), p["name"]))
     with st.popover(label, icon=":material/merge:", key=f"{key}_pop"):
+        if twins:
+            st.markdown(f":blue-badge[{twins} purchases of this, same day and store]")
+            if st.button(f"Combine them into one", key=f"{key}_twins", type="primary", icon=":material/merge:"):
+                combined = records.combine_same_day(product["product_id"])
+                st.toast("Combined into one purchase")
+                if on_done:
+                    on_done({"combined": combined})
+                refresh()
+            if not others:
+                return
+            st.divider()
         st.caption(f"Merge **{product['name']}** into the product it really is. "
                    "Its purchases, nicknames and any missing details move over.")
         target = st.selectbox("It's the same as", others, index=None, key=f"{key}_pick",
