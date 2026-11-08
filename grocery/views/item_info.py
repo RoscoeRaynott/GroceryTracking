@@ -112,6 +112,8 @@ def _panel(bid):
         if product:
             _pack(product, item)
             _group(product, item)
+            product_ui.merge(product, f"ii_merge_{product['product_id']}", label="Merge",
+                             on_done=lambda plan: _after_merge(plan, bid))
     if not product:
         st.caption("Loose item: no package details to fill in.")
         return
@@ -726,6 +728,14 @@ def _typical(product):
                 st.session_state.pop(key, None)
                 _refresh()
 
+
+
+def _after_merge(plan, bid):
+    """If this purchase was folded into a same-day purchase of the other product, show that one instead."""
+    kept = plan.get("combined", {}).get(bid)
+    if kept:
+        st.session_state[OPEN] = kept
+        st.rerun()  # the whole page: one tile fewer, and the panel reopens on the purchase that was kept
 
 
 NEW_GROUP = "➕ New group…"

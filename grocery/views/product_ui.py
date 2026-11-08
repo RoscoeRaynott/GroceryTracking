@@ -84,14 +84,18 @@ LABELS = {"photo_url": "photo", "barcode": "barcode", "brand": "brand", "serving
           "pack_size": "pack size", "pack_unit": "pack unit", "packaged": "packaged"}
 
 
-def merge(product, key):
-    """“Same as a product I have”: fold this duplicate into the right product, after a preview."""
+def merge(product, key, label="Same as a product I have", on_done=None):
+    """“Same as a product I have”: fold this duplicate into the right product, after a preview.
+    on_done(plan) runs after merging (e.g. to keep the item panel open on the purchase that was kept)."""
     others = [p for p in records.products() if p["product_id"] != product["product_id"]]
     if not others:
         return
-    # Same item first: that's where duplicates usually are.
-    others.sort(key=lambda p: (p.get("item_id") != product.get("item_id"), p.get("item", ""), p["name"]))
-    with st.popover("Same as a product I have", icon=":material/merge:", key=f"{key}_pop"):
+    # Likely duplicates first: bought the same day (the store scanned it twice), then the same group.
+    mine = {(b.get("purchased_on"), b.get("store")) for b in records.live_batches() if b.get("product_id") == product["product_id"]}
+    same_day = {b.get("product_id") for b in records.live_batches() if (b.get("purchased_on"), b.get("store")) in mine}
+    others.sort(key=lambda p: (p["product_id"] not in same_day, p.get("item_id") != product.get("item_id"),
+                               p.get("item", ""), p["name"]))
+    with st.popover(label, icon=":material/merge:", key=f"{key}_pop"):
         st.caption(f"Merge **{product['name']}** into the product it really is. "
                    "Its purchases, nicknames and any missing details move over.")
         target = st.selectbox("It's the same as", others, index=None, key=f"{key}_pick",
@@ -110,11 +114,14 @@ def merge(product, key):
             [f":blue-badge[{n} purchase{'s' if n != 1 else ''} move]"]
             + [f":green-badge[+ {LABELS.get(c, c)}]" for c in plan["brings"] if c not in ("pack_unit", "info_source")]
             + [f":violet-badge[+ “{nm}”]" for nm in plan["nicknames"]]
-            + [f":orange-badge[item → {target.get('item', '')}]"] * (target.get("item_id") != product.get("item_id"))))
+            + [f":orange-badge[group → {target.get('item', '')}]"] * (target.get("item_id") != product.get("item_id"))
+            + [f":blue-badge[{plan['same_day']} same-day purchase{'s' if plan['same_day'] != 1 else ''} → one]"] * bool(plan["same_day"])))
         st.caption(f"“{product['name']}” is then removed; {target['name']} keeps its own details where both have one.")
         if st.button("Merge", key=f"{key}_go", type="primary", icon=":material/merge:"):
-            records.merge_products(product["product_id"], target["product_id"])
-            st.toast(f"Merged into {target['name']}")
+            done = records.merge_products(product["product_id"], target["product_id"])
+            st.toast(f"Merged into {target['name']}" + (" · same-day purchases combined" if done.get("combined") else ""))
+            if on_done:
+                on_done(done)
             refresh()
 
 

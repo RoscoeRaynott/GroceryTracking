@@ -741,7 +741,10 @@ def merge_preview(from_id, into_id):
     moved = [x for x in sheets.read_tab("batches") if x.get("product_id") == from_id]
     brings = [col for col in MERGE_FILL if a.get(col) and not b.get(col)]
     new_names = [n for n in nicknames(a) if norm(n) not in {norm(m) for m in nicknames(b)} | {norm(b["name"])}]
-    return {"from": a, "into": b, "moved": moved, "brings": brings, "nicknames": new_names}
+    days = {(x.get("purchased_on"), norm(x.get("store", ""))) for x in live_batches()
+            if x.get("product_id") == into_id and x.get("status") == "open"}
+    same_day = sum(1 for x in moved if x.get("status") == "open" and (x.get("purchased_on"), norm(x.get("store", ""))) in days)
+    return {"from": a, "into": b, "moved": moved, "brings": brings, "nicknames": new_names, "same_day": same_day}
 
 
 def merge_products(from_id, into_id):
@@ -760,7 +763,48 @@ def merge_products(from_id, into_id):
     size = _float(b.get("pack_size") or change.get("pack_size"))
     if size:  # purchases of the merged product that were waiting for a pack size get it now
         apply_pack_size(into_id, size, b.get("pack_unit") or change.get("pack_unit") or "")
+    plan["combined"] = combine_same_day(into_id)
     return plan
+
+
+def combine_same_day(product_id):
+    """Open purchases of one product bought the same day at the same store become one purchase (the store
+    scanned the same thing twice): amounts, packs and prices are added up. The extra rows are marked deleted
+    and anything recorded on them (waste, expiry) moves to the one kept. Returns {absorbed id: kept id}."""
+    open_rows = [b for b in live_batches() if b.get("product_id") == product_id and b.get("status") == "open"]
+    by_day = {}
+    for b in sorted(open_rows, key=lambda b: b.get("created_at", "")):
+        by_day.setdefault((b.get("purchased_on", ""), norm(b.get("store", ""))), []).append(b)
+    absorbed, change, share = {}, {}, {}
+    for rows in by_day.values():
+        if len(rows) < 2:
+            continue
+        keep = rows[0]
+        whole = sum(_float(r.get("units")) or 1.0 for r in rows)
+        for r in rows:  # each row's part of the combined purchase, to rescale what went bad on it
+            share[r["batch_id"]] = (_float(r.get("units")) or 1.0) / whole
+
+        def total(col):
+            vals = [_float(r.get(col)) for r in rows]
+            return round(sum(v for v in vals if v), 4) if any(vals) else ""
+        change[keep["batch_id"]] = {"units": total("units"), "packs": total("packs"), "price_paid": total("price_paid")}
+        for r in rows[1:]:
+            change[r["batch_id"]] = {"status": "deleted"}
+            absorbed[r["batch_id"]] = keep["batch_id"]
+    if change:
+        sheets.update_rows("batches", "batch_id", change)
+        moved = {}
+        for e in sheets.read_tab("events"):
+            bid = e.get("batch_id")
+            if bid not in share:
+                continue
+            up = {"batch_id": absorbed.get(bid, bid)}
+            if e.get("type") == "wasted" and _float(e.get("wasted_fraction")):
+                up["wasted_fraction"] = round(_float(e["wasted_fraction"]) * share[bid], 4)  # 1/4 of one of 2 packs = 1/8
+            moved[e["event_id"]] = up
+        if moved:
+            sheets.update_rows("events", "event_id", moved)
+    return absorbed
 
 
 def nicknames(product):
