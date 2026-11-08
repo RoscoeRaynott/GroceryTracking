@@ -25,8 +25,11 @@ def render():
     back_home()
     st.title("Settings")
     st.caption("Changes save to your Google Sheet as soon as you make them.")
-    if st.button("🧪 Lookup lab", key="to_lab", type="tertiary", help="Try the three kinds of product search on one product"):
-        go("lab")
+    with st.container(horizontal=True):
+        if st.button("💸 AI costs", key="to_costs", type="primary", help="What the AI has cost, by task"):
+            go("costs")
+        if st.button("🧪 Lookup lab", key="to_lab", type="tertiary", help="Try the three kinds of product search on one product"):
+            go("lab")
 
     _, err = _sheet_status()
     models = _gemini_status()
@@ -44,6 +47,13 @@ def render():
                              on_change=_save, args=(key,))
             else:
                 st.text_input(label, value=saved, key=f"set_{key}", on_change=_save, args=(key,))
+
+    with st.container(border=True):
+        st.subheader("AI prices")
+        st.caption("Used to work out costs. Format: model=input/output dollars per 1M tokens; separate models with ;")
+        for key, label in (("ai_prices", "Token prices"), ("price_per_1000_searches", "Dollars per 1,000 Google searches")):
+            st.text_input(label, value=current.get(key) or DEFAULT_SETTINGS[key], key=f"set_{key}",
+                          on_change=_save, args=(key,))
 
     with st.container(border=True):
         st.subheader("Formula numbers")

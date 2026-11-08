@@ -42,6 +42,10 @@ TABS = {
     "settings": ["key", "value"],
     "ai_log": [
         "at", "task", "model", "input_tokens", "output_tokens", "seconds", "ok",
+        "thought_tokens",  # thinking, billed as output
+        "tool_tokens",  # Google search results the model read, billed as input
+        "searches",  # Google searches it ran (each billed)
+        "cost_usd",  # worked out from the prices in Settings
     ],
 }
 
@@ -56,6 +60,10 @@ DEFAULT_SETTINGS = {
     "model_voice": "gemini-3.8-flash",
     "model_labels": "gemini-3.5-flash-lite",
     "model_lookup": "gemini-3.8-flash",
+    # Dollars per 1M tokens, input/output (thinking counts as output). From third-party price lists (Nov 2026):
+    # check Google's pricing page and edit in Settings.
+    "ai_prices": "gemini-3.8-flash=0.75/3.75; gemini-3.5-flash-lite=0.30/2.50",
+    "price_per_1000_searches": "14",
 }
 
 KINDS = ["Food", "Household", "One-time"]

@@ -196,7 +196,8 @@ def _generate(task, model, prompt, media, search):
         ok = True
         return result, sources
     finally:
-        _log(task, model, usage, time.time() - started, ok)
+        searches = len(((locals().get("candidate") or {}).get("groundingMetadata") or {}).get("webSearchQueries") or [])
+        _log(task, model, usage, time.time() - started, ok, searches)
 
 
 def _parse_json(text):
@@ -213,7 +214,14 @@ def _parse_json(text):
         raise GeminiError(f"Gemini's reply was not valid JSON: {ex}") from ex
 
 
-def _log(task, model, usage, seconds, ok):
+def _log(task, model, usage, seconds, ok, searches=0):
+    """Every call goes to the ai_log tab with its tokens, searches and cost, and into the next cost pop-up."""
+    from grocery import costs
+    try:
+        dollars = costs.cost(model, usage, searches)
+    except Exception:
+        dollars = 0.0
+    costs.note(task, dollars, searches)
     try:
         sheets.append_rows("ai_log", [{
             "at": timeutil.now_str(),
@@ -223,6 +231,10 @@ def _log(task, model, usage, seconds, ok):
             "output_tokens": usage.get("candidatesTokenCount", ""),
             "seconds": round(seconds, 1),
             "ok": ok,
+            "thought_tokens": usage.get("thoughtsTokenCount", ""),
+            "tool_tokens": usage.get("toolUsePromptTokenCount", ""),
+            "searches": searches,
+            "cost_usd": round(dollars, 5),
         }])
     except Exception:
         pass  # Logging must never break the actual task.
