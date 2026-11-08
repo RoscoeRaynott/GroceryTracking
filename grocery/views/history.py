@@ -1,8 +1,10 @@
 """History & undo: delete purchased items (one, or a whole receipt) and undo recent changes."""
 
+import datetime as dt
+
 import streamlit as st
 
-from grocery import events, records
+from grocery import events, records, timeutil
 from grocery.views.common import back_home
 
 
@@ -21,7 +23,10 @@ def render():
         with st.container(border=True):
             total = f" · ${p['receipt_total']}" if p.get("receipt_total") else ""
             when = f"{p['purchased_on']} {p.get('purchased_time', '')}".strip()
-            st.markdown(f"**{p['store']}** · {when}{total}  \n:gray[Added {p.get('created_at', '')} by {p.get('source', '')}]")
+            with st.container(horizontal=True, vertical_alignment="center"):
+                st.markdown(f"**{p['store']}** · {when}{total}{_odd_date(p)}  \n"
+                            f":gray[Added {p.get('created_at', '')} by {p.get('source', '')}]")
+                _fix_date(p)
             for b in batches:
                 with st.container(horizontal=True, vertical_alignment="center"):
                     price = f" · ${b['price_paid']}" if b.get("price_paid") else ""
@@ -53,6 +58,33 @@ def render():
 
     st.subheader("Recent changes")
     render_changes()
+
+
+def _bought_on(p):
+    try:
+        return dt.date.fromisoformat(str(p.get("purchased_on", ""))[:10])
+    except ValueError:
+        return None
+
+
+def _odd_date(p):
+    """A receipt date far from the day it was added was probably misread (e.g. 2023 instead of 2026)."""
+    bought, added = _bought_on(p), _bought_on({"purchased_on": p.get("created_at", "")})
+    return " :orange-badge[date looks wrong?]" if bought and added and abs((added - bought).days) > 60 else ""
+
+
+def _fix_date(p):
+    """✏️ Fix the receipt's date: every item on it moves to the right day."""
+    pid = p["purchase_id"]
+    with st.popover("", icon=":material/edit_calendar:", key=f"hist_datepop_{pid}", help="Fix this receipt's date"):
+        current = _bought_on(p) or timeutil.now().date()
+        day = st.date_input("Bought on", value=current, max_value=timeutil.now().date(), format="MM/DD/YYYY",
+                            key=f"hist_date_{pid}_{current}")
+        st.caption("Changes the date of every item on this receipt; days open and lifespans follow.")
+        if day != current and st.button("Save date", key=f"hist_datesave_{pid}", type="primary"):
+            records.set_purchase_date(pid, day)
+            st.toast(f"Receipt date: {day:%b %d, %Y}")
+            st.rerun()
 
 
 def render_changes():

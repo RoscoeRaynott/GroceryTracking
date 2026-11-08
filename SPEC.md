@@ -604,3 +604,7 @@ _Status: gathering requirements. No code until the plan is approved._
 - When the review is built, the app cuts each picture out of the screenshot (kept in memory, not in the draft, since a Sheet cell is too small) and shows it on the review card. On save it becomes the new product's photo, or fills a known product's missing photo. Boxes that are too small, too wide or text-shaped are ignored.
 - Online orders also give full product names with sizes, so names and pack sizes are more exact. Ingredients and nutrition still come from barcode, label photo or lookup.
 - **Paper receipt + app screenshots of the same purchase (built):** each line remembers whether it came from a paper receipt or an app screenshot. When both are present, the AI is told they're two views of the SAME purchase: one item per thing bought, using both lines (the app's full name, size and picture; the price counted once, paper wins if they differ, marked to check).
+
+## Fix a receipt's date (built)
+- History: each receipt has a 📅 button to change its date (not in the future). Every item on that receipt moves to the new day, so days open, lifespans and warnings follow.
+- A receipt whose date is more than 60 days from the day it was added shows :orange-badge[date looks wrong?] (e.g. read as 2023 instead of 2026).

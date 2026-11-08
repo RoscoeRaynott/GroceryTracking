@@ -390,6 +390,14 @@ def purchases():
     return sorted(out, key=lambda p: p[0]["created_at"], reverse=True)
 
 
+def set_purchase_date(purchase_id, day):
+    """Fix the date of a whole receipt (e.g. read as the wrong year): every item on it moves to that day, so
+    days open, lifespans and warnings are all worked out from the right date."""
+    day = day.isoformat() if hasattr(day, "isoformat") else str(day)
+    sheets.update_rows("batches", "batch_id", {b["batch_id"]: {"purchased_on": day}
+                                               for b in sheets.read_tab("batches") if b.get("purchase_id") == purchase_id})
+
+
 def recent_purchases(limit=20):
     return purchases()[:limit]
 
