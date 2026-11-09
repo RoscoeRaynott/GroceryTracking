@@ -208,8 +208,11 @@ def _find_tools(product, item):
     go_search = st.button(f"Look up on {store}" if store else "Look up", key=f"{key}_go", icon=":material/search:",
                           help=f"Search {store + chr(39) + 's site' if store else 'the web'} and fill in what's missing")
     with st.popover("", icon=":material/edit_note:", key=f"{key}_words", help="Search words"):
-        st.text_area("Search for", value=records.product_search_text(product), key=_k(f"ii_q_{pid}", records.product_search_text(product)),
-                     help="Fix or add words to make the search exact")
+        st.text_input("Search for", value=records.product_search_text(product),
+                      key=_k(f"ii_q_{pid}", records.product_search_text(product)),
+                      help="Fix or add words to make the search exact")
+        # Tapping the button also takes what you just typed (no Enter / Ctrl+Enter needed on a phone).
+        go_search = st.button("🔎 Search with these words", key=f"{key}_wordsgo", type="primary") or go_search
     if go_search:
         with st.spinner(f"Searching {store + chr(39) + 's site' if store else 'the web'}…"):
             st.session_state[key] = _lookup(lambda: productinfo.web_lookup(

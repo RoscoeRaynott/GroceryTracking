@@ -85,4 +85,4 @@ def toast_pending():
         by[name] = by.get(name, 0) + d
     parts = " · ".join(f"{name} ${d:.3f}" for name, d in sorted(by.items(), key=lambda x: -x[1])[:3])
     st.toast(f"💸 AI cost ${total:.3f}" + (f" ({searches} Google search{'es' if searches != 1 else ''})" if searches else "")
-             + f"  \n{parts}", icon="💸")
+             + f"  \n{parts}", icon="💸", duration=15)  # long enough to read on a phone (✕ closes it sooner)

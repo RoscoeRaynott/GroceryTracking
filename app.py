@@ -4,6 +4,8 @@ from grocery import costs
 from grocery.views import add_purchase, costs as costs_view, history, home, insights, pantry, settings, trial, voice_update
 
 st.set_page_config(page_title="Grocery Tracker", page_icon="🛒", layout="centered")
+# Keyboard hints ("Press Enter to apply", "Ctrl+Enter") mean nothing on a phone: every box has a button instead.
+st.markdown("<style>[data-testid='InputInstructions'] { display: none !important; }</style>", unsafe_allow_html=True)
 
 PAGES = {
     "home": home.render,
