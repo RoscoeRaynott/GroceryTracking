@@ -891,7 +891,8 @@ def _pack_weight(product, item):
     if n is not None:
         what = "one pack" if records._float(product.get("pack_size")) else f"one {item.get('unit') or 'unit'}"
         piece = records._float(product.get("piece_grams"))
-        text = f"📏 1 piece ≈ {piece:g} g" if loose and piece else f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how})."
+        text = (f"📏 1 piece ≈ {piece:,.0f} g ({piece / WEIGHT_UNITS['oz']:.1f} oz)" if loose and piece
+                else f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how}).")
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
             st.caption(text)
             with st.popover("", icon=":material/edit:", key=f"ii_wedit_{pid}", help="Change the weight used"):
@@ -924,17 +925,13 @@ def _pack_weight(product, item):
     else:
         st.markdown(":orange-badge[📏 weight?] :gray[Needed to add up what you ate. The label's \"servings per "
                     "container\" is the easiest.]")
-        with st.container(horizontal=True, vertical_alignment="bottom"):
-            servings = st.number_input("Servings per container", value=None, min_value=0.0, step=1.0, format="%g",
-                                       key=f"ii_spp_{pid}", placeholder="e.g. 12")
-            if amount and problem == "serving":
-                amount_g = st.number_input("or one serving weighs (g)", value=None, min_value=0.0, step=1.0, format="%g",
-                                           key=f"ii_sg_{pid}", placeholder="e.g. 2")
-            elif not amount:
-                amount_g = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
-                                           key=f"ii_pg_{pid}", placeholder="e.g. 400")
-                unit = st.selectbox("Unit", ["g", "oz", "lb", "kg"], key=f"ii_pgu_{pid}", label_visibility="collapsed")
-                amount_g = amount_g * nutrition.GRAMS[unit] if amount_g else None
+        servings = st.number_input("Servings per container", value=None, min_value=0.0, step=1.0, format="%g",
+                                   key=f"ii_spp_{pid}", placeholder="e.g. 12")
+        if amount and problem == "serving":
+            amount_g = _weight_input("or one serving weighs", None, f"ii_sg_{pid}", placeholder="e.g. 2 g")
+        elif not amount:
+            amount_g = _weight_input("or one pack weighs", None, f"ii_pg_{pid}", units=("g", "oz", "lb", "kg"),
+                                     placeholder="e.g. 400 g or 14 oz")
     if st.button("Save", key=f"ii_pgsave_{pid}", type="primary"):
         if not (servings or amount_g or density):
             st.warning("Enter one of the numbers first.")
@@ -954,15 +951,32 @@ def _pack_weight(product, item):
         _refresh()
 
 
+WEIGHT_UNITS = {"g": 1.0, "oz": 28.3495, "lb": 453.592, "kg": 1000.0}
+
+
+def _weight_input(label, grams, key, units=("g", "oz", "lb"), placeholder=None, help=None):
+    """A weight box with its own unit (g / oz / lb…). Shows a saved value in the unit you last picked; returns grams.
+    The unit choice is remembered for the session."""
+    unit_key = "weight_unit"  # the last unit you picked, used for every weight box
+    with st.container(horizontal=True, vertical_alignment="bottom", gap="small"):
+        unit = st.selectbox("Unit", units, index=list(units).index(st.session_state.get(unit_key, "g"))
+                            if st.session_state.get(unit_key, "g") in units else 0,
+                            key=f"{key}_unit", label_visibility="collapsed", width=90)
+        st.session_state[unit_key] = unit
+        shown = round(grams / WEIGHT_UNITS[unit], 2) if grams else None
+        value = st.number_input(label, value=shown, min_value=0.0, step=0.5 if unit != "g" else 5.0, format="%g",
+                                key=_k(f"{key}_{unit}", grams), placeholder=placeholder, help=help)
+    return value * WEIGHT_UNITS[unit] if value else value
+
+
 def _edit_weights(product, item, loose):
     """The numbers nutrition totals use, to set, change or clear (0 clears): one piece's weight for loose produce;
     servings per container, one pack's weight and a liquid's density for packaged food."""
     pid = product["product_id"]
     f = records._float
     if loose:
-        grams = st.number_input("One piece weighs (g)", value=f(product.get("piece_grams")) or None, min_value=0.0,
-                                step=5.0, format="%g", key=_k(f"ii_wpiece_{pid}", product.get("piece_grams")),
-                                placeholder="e.g. 150", help="0 clears it")
+        grams = _weight_input("One piece weighs", f(product.get("piece_grams")), f"ii_wpiece_{pid}",
+                              placeholder="e.g. 150 g or 6 oz", help="0 clears it")
         if st.button("Save", key=f"ii_wsave_{pid}", type="primary"):
             # the piece weight is the only weight loose produce uses: clear pack numbers an older form may have saved
             records.set_weights(pid, piece_grams=grams or 0, pack_grams=0, servings_per_pack=0)
@@ -972,9 +986,8 @@ def _edit_weights(product, item, loose):
     spp = st.number_input("Servings per container (one unit, as on the label)", value=f(product.get("servings_per_pack")) or None,
                           min_value=0.0, step=1.0, format="%g", key=_k(f"ii_wspp_{pid}", product.get("servings_per_pack")),
                           help="0 clears it")
-    pack_g = st.number_input("One pack weighs (g)", value=f(product.get("pack_grams")) or None, min_value=0.0, step=10.0,
-                             format="%g", key=_k(f"ii_wpack_{pid}", product.get("pack_grams")),
-                             help="Only needed when the pack size isn't a weight or volume. 0 clears it")
+    pack_g = _weight_input("One pack weighs", f(product.get("pack_grams")), f"ii_wpack_{pid}", units=("g", "oz", "lb", "kg"),
+                           help="Only needed when the pack size isn't a weight or volume. 0 clears it")
     density = st.number_input("Density (g/ml), for liquids", value=f(product.get("density")) or None, min_value=0.0,
                               max_value=5.0, step=0.01, format="%g", key=_k(f"ii_wdens_{pid}", product.get("density")),
                               help="0 clears it")
@@ -1026,8 +1039,8 @@ def _typical(product):
                     st.session_state[gkey] = (None, "")
             grams, portion = st.session_state[gkey]
             grams = records._float(product.get("piece_grams")) or grams  # the weight you set wins over USDA's typical
-            grams = st.number_input("1 piece weighs (g)", value=grams, min_value=0.0, step=5.0, format="%g",
-                                    key=f"{key}_grams_{pick['fdc_id']}", help=f"USDA: {portion}" if portion else None)
+            grams = _weight_input("1 piece weighs", grams, f"{key}_grams_{pick['fdc_id']}",
+                                  help=f"USDA: {portion}" if portion else None)
         with st.container(horizontal=True):
             if st.button("Use it", key=f"{key}_yes", type="primary"):
                 if records.save_typical(pid, item.get("name") or product["name"], pick, grams, portion):
