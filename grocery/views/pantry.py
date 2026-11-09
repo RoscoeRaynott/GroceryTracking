@@ -358,7 +358,7 @@ def _look_up_all(needs, label="🔎 Look up all"):
                 st.session_state[f"ni_pick_{pid}"] = False
             st.rerun()
     notes = ([f"📷🔢 {free} by photo / barcode (cheapest)"] if free else []) + \
-            ([f"{skipped['nothing']} need only a photo or a date"] if skipped["nothing"] else []) + \
+            ([f"{skipped['nothing']} need only a photo, a date or a weight"] if skipped["nothing"] else []) + \
             ([f"{skipped['missed']} not found in the last {records.MISS_DAYS} days (scan its barcode or label to retry)"]
              if skipped["missed"] else [])
     if notes:

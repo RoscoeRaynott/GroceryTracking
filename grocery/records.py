@@ -4,7 +4,7 @@ import json
 import re
 import uuid
 
-from grocery import productinfo, sheets, timeutil
+from grocery import nutrition, productinfo, sheets, timeutil
 
 def new_id(prefix):
     """A random id, only for temporary rows (drafts)."""
@@ -435,6 +435,17 @@ def is_alcohol(product, item):
     return looks_alcoholic((item or {}).get("name"), (product or {}).get("name"), (product or {}).get("brand"))
 
 
+def set_pack_weight(product_id, servings_per_pack=None, pack_grams=None):
+    """How much one pack holds, for nutrition totals: servings in it, or its weight (g) / volume (ml)."""
+    change = {}
+    if servings_per_pack:
+        change["servings_per_pack"] = round(servings_per_pack, 2)
+    if pack_grams:
+        change["pack_grams"] = round(pack_grams, 1)
+    if change:
+        sheets.update_rows("products", "product_id", {product_id: change})
+
+
 def set_abv(product_id, abv):
     sheets.update_rows("products", "product_id", {product_id: {"abv": abv}})
 
@@ -780,12 +791,16 @@ def completeness(product, item, batch):
         checks.append(("expiry", bool(batch.get("expiry_date")) or item.get("no_expiry") == "yes"))
     if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition
         checks.append(("nutrition", nutrition_done(product)))
+        if nutrition.needs_weight(product, item):  # e.g. counted in pieces but one piece's weight isn't known
+            checks.append(("weight", False))
     if packaged:
         no_label = product.get("info_status") == "none"
         checks += [("brand", bool(product.get("brand")) or product.get("no_brand") == "yes"),
                    ("pack size", bool(_float(product.get("pack_size"))) or product.get("pack_varies") == "yes")]
         if item.get("kind", "Food") == "Food" and is_alcohol(product, item):  # so Insights can count alcohol
             checks.append(("ABV", bool(_float(product.get("abv")))))
+        if item.get("kind", "Food") == "Food" and nutrition.needs_weight(product, item):  # for nutrition totals
+            checks.append(("weight", False))
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
                 ("ingredients", bool(product.get("ingredients")) or no_label),
@@ -795,7 +810,8 @@ def completeness(product, item, batch):
 
 
 MERGE_FILL = ("photo_url", "barcode", "brand", "serving_size", "servings_per_pack", "ingredients", "nutrients_json",
-              "abv", "info_source", "info_url", "info_status", "pack_size", "pack_unit", "packaged")
+              "abv", "info_source", "info_url", "info_status", "pack_size", "pack_unit", "packaged",
+              "pack_grams", "piece_grams")
 
 
 def merge_preview(from_id, into_id):

@@ -141,6 +141,7 @@ def _panel(bid):
             _ingredients(product, item)
         with tabs["📊 Nutrition"]:
             _nutrition(product)
+            _pack_weight(product, item)
     with tabs["🏷 Nicknames"]:
         _names(product)
 
@@ -857,6 +858,37 @@ def _nutrition(product):
                 _refresh()
     elif str(product.get("info_source", "")).startswith("USDA"):
         _typical(product)  # change the typical match
+
+
+def _pack_weight(product, item):
+    """📏 How much one pack holds, so Insights can add up what you ate: shown when known, asked when not."""
+    from grocery import nutrition
+    if not nutrition.per_serving(product):
+        return
+    pid = product["product_id"]
+    n, how = nutrition.pack_servings(product, item)
+    if n is not None:
+        what = "one pack" if records._float(product.get("pack_size")) else f"one {item.get('unit') or 'unit'}"
+        st.caption(f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how}).")
+        return
+    st.markdown(":orange-badge[📏 weight?] :gray[How much does one pack hold? Needed to add up what you ate.]")
+    with st.container(horizontal=True, vertical_alignment="bottom"):
+        servings = st.number_input("Servings in one pack", value=None, min_value=0.0, step=1.0, format="%g",
+                                   key=f"ii_spp_{pid}", placeholder="e.g. 12")
+        amount = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
+                                 key=f"ii_pg_{pid}", placeholder="e.g. 400")
+        unit = st.selectbox("Unit", ["g", "oz", "lb", "kg", "ml", "fl oz", "l"], key=f"ii_pgu_{pid}",
+                            label_visibility="collapsed")
+    if st.button("Save", key=f"ii_pgsave_{pid}", type="primary"):
+        if not (servings or amount):
+            st.warning("Enter the servings or the weight first.")
+        else:
+            records.set_pack_weight(pid, servings_per_pack=servings,
+                                    pack_grams=amount * nutrition.GRAMS[unit] if amount else None)
+            if servings and not records._float(product.get("pack_size")):  # servings per pack need a pack
+                records.apply_pack_size(pid, 1.0, product.get("pack_unit") or item.get("unit") or "each")
+            st.toast("Saved: Insights can count this now")
+            _refresh()
 
 
 def _typical(product):
