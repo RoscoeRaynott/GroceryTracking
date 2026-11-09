@@ -53,9 +53,11 @@ def finished_batches(item_id, batches=None, all_events=None):
         start, end = _date(b.get("purchased_on")), _date(b.get("closed_on"))
         if not (start and end):
             continue
+        began = _date(b.get("started_on")) or start  # no start date: counted from the day it was bought
         wasted = events.wasted_share(b["batch_id"], all_events)
         units = _num(b.get("units"), 1.0) or 1.0
-        out.append(dict(b, days=max(1, (end - start).days), wasted=wasted,
+        out.append(dict(b, days=max(1, (end - start).days), eat_days=max(1, (end - max(began, start)).days),
+                        started=bool(_date(b.get("started_on"))), wasted=wasted,
                         eaten_share=1 - wasted, units_num=units, units_eaten=units * (1 - wasted),
                         price=_num(b.get("price_paid"), None)))
     return sorted(out, key=lambda b: (b["purchased_on"], b["closed_on"]))
@@ -67,6 +69,15 @@ def usual_days_per_unit(finished, window):
     if eaten <= 0:
         return None
     return sum(b["eaten_share"] * b["days"] for b in recent) / eaten
+
+
+def usual_eating_days_per_unit(finished, window):
+    """Like usual days per unit, but counted from the day you started eating it (bought-ahead time left out)."""
+    recent = finished[-window:]
+    eaten = sum(b["units_eaten"] for b in recent)
+    if eaten <= 0:
+        return None
+    return sum(b["eaten_share"] * b["eat_days"] for b in recent) / eaten
 
 
 def running_average(finished, window):
@@ -120,6 +131,8 @@ def item_summary(item_id):
     done = finished_batches(item_id)
     per_unit = usual_days_per_unit(done, cfg["window"])
     return {"finished": done, "per_unit": per_unit, "running": running_average(done, cfg["window"]),
+            "eat_per_unit": usual_eating_days_per_unit(done, cfg["window"]),
+            "any_started": any(b["started"] for b in done),
             "best": best_place(done, cfg["best_min"]), "cfg": cfg}
 
 

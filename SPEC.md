@@ -653,3 +653,10 @@ _Status: gathering requirements. No code until the plan is approved._
 ## Unit sanity check (built)
 - Flags a unit that doesn't match the product's name, only when the printed number was copied with the wrong unit (so it doesn't nag): "6 Mega Rolls" as 6 ml → 6 each; "4.5 oz" toothpaste as 4.5 ml → 133 ml; "48 fl oz" oil as 48 oz (weight) → 48 fl oz. "2 x 1 gal" as 2 gal, "Set of 12" as 12 each etc. are fine.
 - **Receipt review:** an orange **unit?** badge and "⚠️ … · Fix → 6 each" on the card (a known group measured differently is changed in Pantry → 📦 instead). **Item panel:** the same warning with a **Fix** button that measures the group in the right unit and fixes the purchase and the product's pack size.
+
+## Start date vs bought date (built)
+- Purchases have a **started_on** date (the day you started eating it); empty = the bought date.
+- Item panel: a **▶ start? / ▶ started Nov 3** chip to set or clear it; with a start date the badges show "⏱ Nd since bought" and "🍽 Nd eating".
+- **Finishing asks once:** if no start date is set, **Finished** opens "When did you start eating it?" with the bought date already picked (one tap keeps it). "Some went bad" asks the same when it finishes the purchase. Voice and receipt "last one finished?" use the bought date.
+- Insights shows **🗓 Kept** (bought → finished, per unit) and, once any start dates exist, **🍽 Eating time** (started → finished, per unit). Warnings and expiry still count from the bought date (spoilage clock).
+- Fixes: only timed-out calls get an estimated cost (a request Google refused isn't billed); "$" in pop-ups and badges is escaped so two amounts no longer turn into a math formula.

@@ -33,6 +33,7 @@ TABS = {
         "store", "purchased_on", "purchased_time", "source", "units", "unit", "price_paid",
         "receipt_total", "expiry_date", "status", "closed_on", "created_at",
         "packs",  # packs as sold (5 crates); units = packs x the product's pack size
+        "started_on",  # the day you started eating it; "" = the day it was bought
     ],
     "events": [
         "event_id", "change_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",

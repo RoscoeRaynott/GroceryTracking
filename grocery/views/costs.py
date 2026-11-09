@@ -79,7 +79,7 @@ def render():
     st.caption("Each bar: total cost of that kind of AI task · how many times it ran.")
 
     st.subheader("Cost per use", anchor=False)
-    st.markdown(" ".join(f":gray-badge[{r['task']}: ${r['per_call']:.3f} each"
+    st.markdown(" ".join(f":gray-badge[{r['task']}: \\${r['per_call']:.3f} each"
                          + (f", {r['searches'] / r['calls']:.1f} searches" if r["searches"] else "") + "]"
                          for _, r in by.iterrows()))
 

@@ -393,6 +393,11 @@ def purchases():
     return sorted(out, key=lambda p: p[0]["created_at"], reverse=True)
 
 
+def set_started(batch_id, day):
+    """The day you started eating it (bought ahead, it may sit unopened for a while). "" = the bought date."""
+    sheets.update_rows("batches", "batch_id", {batch_id: {"started_on": day.isoformat() if hasattr(day, "isoformat") else (day or "")}})
+
+
 def set_purchase_date(purchase_id, day):
     """Fix the date of a whole receipt (e.g. read as the wrong year): every item on it moves to that day, so
     days open, lifespans and warnings are all worked out from the right date."""

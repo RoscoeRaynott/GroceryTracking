@@ -10,7 +10,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from grocery import analytics, camera, events, productinfo, recorder, records, sheets, voice
+from grocery import analytics, camera, events, productinfo, recorder, records, sheets, timeutil, voice
 from grocery.gemini import GeminiError
 from grocery.schema import KINDS, STORAGE, UNITS
 from grocery.views import product_ui
@@ -104,10 +104,14 @@ def _panel(bid):
     facts = [f":blue-badge[🗓 {batch.get('purchased_on', '')} · {batch.get('store', '')}]"]
     if batch.get("price_paid"):
         facts.append(f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
-    facts.append(f":gray-badge[⏱ {days}d open]")
+    began = analytics._date(batch.get("started_on"))
+    facts.append(f":gray-badge[⏱ {days}d since bought]" if began else f":gray-badge[⏱ {days}d open]")
+    if began:
+        facts.append(f":violet-badge[🍽 {max(0, (timeutil.now().date() - began).days)}d eating]")
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
         st.markdown(" ".join(facts), width="content")
         _kept(item, product)
+        _started(batch)
         if item.get("perishable") == "yes":  # only things that go bad need an expiry date (same rule as the bar)
             _expiry(batch, item)
         _bought(batch, product)
@@ -478,17 +482,59 @@ def _quick_actions(batch, product, item, can_look_up):
     if row and row["reason"]:
         st.markdown(f":{'red' if row['level'] == 'red' else 'orange'}-badge[⚠️ {row['reason']}]")
     with st.container(horizontal=True, gap="small"):
-        if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
-            events.apply([{"type": "finish", "batch": batch}], said="Pantry: Finished", source="pantry")
-            st.toast(f"{batch['item']} finished · Undo in History")
-            _close()
-            st.rerun()  # the item leaves the Pantry, so close the panel and redraw the page
+        if batch.get("started_on"):
+            if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
+                _finish(batch)
+        else:  # no start date yet: ask once, with the bought date ready to accept
+            with st.popover("Finished", icon=":material/check:", type="primary", key=f"pfpop_{bid}"):
+                began = _start_question(batch, f"pfstart_{bid}")
+                if st.button("✓ Finished", key=f"pf_{bid}", type="primary"):
+                    _finish(batch, began)
         with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
             _went_bad(batch)
         if product and can_look_up:
             _find_tools(product, item)
     if product and can_look_up:
         _scan_waiting(product, item)
+
+
+def _start_question(batch, key):
+    """"When did you start eating it?" with the bought date already picked, so one tap keeps it."""
+    import datetime as dt
+    bought = analytics._date(batch.get("purchased_on")) or timeutil.now().date()
+    day = st.date_input("When did you start eating it?", value=bought, min_value=bought,
+                        max_value=max(bought, timeutil.now().date()), format="MM/DD/YYYY", key=key)
+    st.caption("Don't remember? Leave the bought date.")
+    return day if day and day != bought else None
+
+
+def _finish(batch, began=None):
+    if began:
+        records.set_started(batch["batch_id"], began)
+    events.apply([{"type": "finish", "batch": batch}], said="Pantry: Finished", source="pantry")
+    st.toast(f"{batch['item']} finished · Undo in History")
+    _close()
+    st.rerun()  # the item leaves the Pantry, so close the panel and redraw the page
+
+
+def _started(batch):
+    """▶ The day you started eating it (the bought date if you never say)."""
+    bid = batch["batch_id"]
+    day = analytics._date(batch.get("started_on"))
+    with st.popover(f"▶ started {day:%b %d}" if day else "▶ start?", key=f"ii_startpop_{bid}"):
+        st.caption("The day you started eating it. Bought ahead? It counts from here, not the bought date.")
+        bought = analytics._date(batch.get("purchased_on")) or timeutil.now().date()
+        new = st.date_input("Started eating on", value=day or timeutil.now().date(), min_value=bought,
+                            max_value=max(bought, timeutil.now().date()), format="MM/DD/YYYY",
+                            key=_k(f"ii_start_{bid}", day))
+        with st.container(horizontal=True):
+            if new and new != day and st.button("Save", key=f"ii_startsave_{bid}", type="primary"):
+                records.set_started(bid, new)
+                st.toast(f"Started on {new:%b %d}")
+                _refresh()
+            if day and st.button("Clear", key=f"ii_startclear_{bid}", type="tertiary"):
+                records.set_started(bid, "")
+                _refresh()
 
 
 def _went_bad(b):
@@ -512,8 +558,11 @@ def _went_bad(b):
     st.markdown(f":orange-badge[{share} wasted] "
                 + (":gray-badge[rest eaten · closes]" if done else ":green-badge[rest still left]"))
     st.caption(parsed.get("summary", ""))
+    began = _start_question(b, f"pwstart_{bid}") if done and not b.get("started_on") else None
     with st.container(horizontal=True):
         if st.button("Approve", key=f"pwa_{bid}", type="primary"):
+            if began:
+                records.set_started(bid, began)
             events.apply([{"type": "waste", "batch": b, "fraction": parsed.get("fraction"),
                            "batch_done": done, "happened_on": parsed.get("happened_on")}],
                          said=f"Pantry: {parsed['text']}", source="pantry")

@@ -228,7 +228,9 @@ def _parse_json(text):
 def _log(task, model, usage, seconds, ok, searches=0, error=""):
     """Every call goes to the ai_log tab with its tokens, searches and cost, and into the next cost pop-up."""
     from grocery import costs
-    estimated = not ok and not usage  # failed before Google said what it used (e.g. timed out): it may still bill
+    # Timed out before Google said what it used: it may still have done (and billed) the work. A request Google
+    # refused outright (an HTTP error) isn't billed, so it stays at $0.
+    estimated = not ok and not usage and error == "timeout"
     try:
         if estimated:
             dollars, searches = costs.estimate(task, model)

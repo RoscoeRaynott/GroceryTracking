@@ -100,7 +100,8 @@ def toast_pending():
     by = {}
     for name, d, _ in spent:
         by[name] = by.get(name, 0) + d
-    parts = " · ".join(f"{name} ${d:.3f}" for name, d in sorted(by.items(), key=lambda x: -x[1])[:3])
-    st.toast(f"💸 AI cost {'≈' if rough else ''}${total:.3f}" + (f" ({searches} Google search{'es' if searches != 1 else ''})" if searches else "")
+    parts = " · ".join(f"{name} \\${d:.3f}" for name, d in sorted(by.items(), key=lambda x: -x[1])[:3])
+    # "\$": two plain $ signs in one message turn the text between them into a math formula.
+    st.toast(f"💸 AI cost {'≈' if rough else ''}\\${total:.3f}" + (f" ({searches} Google search{'es' if searches != 1 else ''})" if searches else "")
              + f"  \n{parts}" + ("  \n≈ estimated: a call failed before Google said what it used" if rough else ""),
              icon="💸", duration=15)  # long enough to read on a phone (✕ closes it sooner)

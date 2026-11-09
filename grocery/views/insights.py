@@ -118,7 +118,11 @@ def _lifespan(summary, item):
     done, unit = summary["finished"], item.get("unit", "unit")
     if summary["per_unit"]:
         per = item["name"].lower() if unit == "each" else unit
-        st.metric(f"Usual lifespan, per {per}", f"{summary['per_unit']:.1f} days")
+        c1, c2 = st.columns(2)
+        c1.metric(f"🗓 Kept, per {per}", f"{summary['per_unit']:.1f} days", help="From the day it was bought to the day it was finished")
+        if summary.get("any_started") and summary.get("eat_per_unit"):
+            c2.metric(f"🍽 Eating time, per {per}", f"{summary['eat_per_unit']:.1f} days",
+                      help="From the day you started it to the day it was finished (no start date = the bought date)")
     if not done:
         st.markdown(":red-badge[no finished batches yet]")
         return
