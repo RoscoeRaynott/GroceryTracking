@@ -96,6 +96,8 @@ def toast_pending():
         return
     total = sum(d for _, d, _ in spent)
     rough = any(name.endswith(" ≈") for name, _, _ in spent)
+    if total < 0.0005:
+        return  # nothing billed (e.g. a request Google refused): no pop-up
     searches = sum(s for _, _, s in spent)
     by = {}
     for name, d, _ in spent:

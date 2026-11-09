@@ -488,27 +488,45 @@ def _quick_actions(batch, product, item, can_look_up):
     if row and row["reason"]:
         st.markdown(f":{'red' if row['level'] == 'red' else 'orange'}-badge[⚠️ {row['reason']}]")
     with st.container(horizontal=True, gap="small"):
-        left = events.packs_left(batch)
-        first_pack = events.packs_finished(bid) == 0
-        if batch.get("started_on") and left == 1:
-            if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
-                _finish(batch)
-        else:  # how many packs (several left) and/or when you started (not known yet): ask once
-            with st.popover("Finished", icon=":material/check:", type="primary", key=f"pfpop_{bid}"):
-                packs = None
-                if left > 1:
-                    choice = st.segmented_control("How many packs finished?", list(range(1, left)) + ["All"], default=1,
-                                                  key=f"pfpacks_{bid}", format_func=lambda n: f"All {left}" if n == "All" else str(n))
-                    packs = None if choice in (None, "All") else int(choice)
-                began = _start_question(batch, f"pfstart_{bid}") if first_pack and not batch.get("started_on") else None
-                if st.button("✓ Finished", key=f"pf_{bid}", type="primary"):
-                    _finish(batch, began, packs)
+        with st.popover("Finished", icon=":material/check:", type="primary", key=f"pfpop_{bid}"):
+            _finish_form(batch)
         with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
             _went_bad(batch)
         if product and can_look_up:
             _find_tools(product, item)
     if product and can_look_up:
         _scan_waiting(product, item)
+
+
+def _finish_form(batch):
+    """Finished: how many packs (multi-packs), when it was started (the ▶ date, else the bought date) and the day
+    it was finished (today unless you say otherwise)."""
+    bid = batch["batch_id"]
+    left, done_before = events.packs_left(batch), events.packs_finished(bid)
+    packs = None
+    if left > 1:
+        choice = st.segmented_control("How many packs finished?", list(range(1, left)) + ["All"], default=1,
+                                      key=f"pfpacks_{bid}", format_func=lambda n: f"All {left}" if n == "All" else str(n))
+        packs = None if choice in (None, "All") else int(choice)
+    today = timeutil.now().date()
+    bought = analytics._date(batch.get("purchased_on")) or today
+    began = None
+    if done_before:  # pack 2 onwards starts the day the one before it was finished
+        last = max((analytics._date(e.get("happened_on")) for e in events.all_events() if e.get("batch_id") == bid
+                    and e.get("type") == "pack_finished" and e.get("undone") != "yes"), default=bought) or bought
+        st.caption(f"▶ Started {last:%b %d}, when the pack before it was finished.")
+        earliest = last
+    else:
+        saved = analytics._date(batch.get("started_on"))
+        day = st.date_input("▶ Started eating on", value=saved or bought, min_value=bought, max_value=max(bought, today),
+                            format="MM/DD/YYYY", key=_k(f"pfstart_{bid}", saved),
+                            help="The same date as the ▶ chip. Don't remember? Leave the bought date.")
+        began = day if day and day != (saved or bought) else None
+        earliest = day or bought
+    end = st.date_input("✓ Finished on", value=today, min_value=earliest, max_value=today, format="MM/DD/YYYY",
+                        key=f"pfend_{bid}")
+    if st.button("✓ Finished", key=f"pf_{bid}", type="primary"):
+        _finish(batch, began, packs, end)
 
 
 def _start_question(batch, key):
@@ -521,12 +539,13 @@ def _start_question(batch, key):
     return day if day and day != bought else None
 
 
-def _finish(batch, began=None, packs=None):
-    """Finish the purchase, or just `packs` of a multi-pack one (it stays in the Pantry with the rest)."""
+def _finish(batch, began=None, packs=None, end=None):
+    """Finish the purchase, or just `packs` of a multi-pack one (it stays in the Pantry with the rest), on `end`."""
     if began:
         records.set_started(batch["batch_id"], began)
     left = events.packs_left(batch)
-    events.apply([{"type": "finish", "batch": batch, "packs": packs}], said="Pantry: Finished"
+    events.apply([{"type": "finish", "batch": batch, "packs": packs,
+                   "happened_on": end.isoformat() if end else None}], said="Pantry: Finished"
                  + (f" {packs} of {left} packs" if packs else ""), source="pantry")
     if packs and packs < left:
         st.toast(f"{packs} pack{'s' if packs != 1 else ''} finished · {left - packs} left · Undo in History")
