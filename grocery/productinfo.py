@@ -636,6 +636,39 @@ def _unit_name(text, target):
     return u
 
 
+_COUNTED = re.compile(r"(?:set of\s+(\d+))|(\d+)\s*-?\s*(?:[A-Za-z]+\s+){0,2}?(?:ct|count|pack|pk|rolls?|pieces?|pcs|"
+                      r"bags?|sheets|pods?|tablets?|wipes|bars|cans|bottles)\b", re.I)
+
+
+def unit_check(name, units, unit):
+    """A likely unit mix-up, when the number printed in the name was copied with the wrong unit:
+    "6 Mega Rolls" entered as 6 ml, "4.5 oz" toothpaste as 4.5 ml, "48 fl oz" oil as 48 oz (weight).
+    Returns (what looks wrong, fixed amount, fixed unit), or None. Silent unless the numbers match."""
+    from grocery.schema import UNITS
+    text, units = str(name or ""), _num(units)
+    if not units or not text:
+        return None
+    single = None if _MULTI.search(text) else _SINGLE.search(text)
+    count = _COUNTED.search(text)
+    if count and unit != "each" and not single:
+        n = int(count.group(1) or count.group(2))
+        if abs(units - n) < 1e-6:
+            return f"“{count.group(0).strip()}” is a count, but it's entered as {units:g} {unit}", float(n), "each"
+    if single:
+        n, printed = float(single.group(1)), _unit_name(single.group(2), unit)
+        if printed != unit and abs(units - n) < 1e-6:
+            entered, target = unit, unit
+            moved = convert(n, printed, target)
+            if moved is None:  # weight vs volume: use the printed unit (or the app's closest one)
+                kind = UNIT_FACTORS.get(printed, ("",))[0]
+                target = printed if printed in UNITS else ("oz" if kind == "weight" else "fl oz")
+                moved = convert(n, printed, target)
+            if moved:
+                return (f"The name says “{single.group(0).strip()}”, but it's entered as {n:g} {entered}",
+                        round(moved, 2), target)
+    return None
+
+
 def size_from_text(text, unit):
     """(items in one pack, size of one item in `unit`) read from text like "1.7 fl oz, 2-pack" or "2 x 32 oz";
     (None, None) when the text says nothing usable."""

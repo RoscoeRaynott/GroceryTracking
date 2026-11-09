@@ -118,6 +118,8 @@ def _panel(bid):
             _group(product, item)
             product_ui.merge(product, f"ii_merge_{product['product_id']}", label="Merge",
                              on_done=lambda plan: _after_merge(plan, bid))
+    if product:
+        _unit_issue(batch, product, item)
     if not product:
         st.caption("Loose item: no package details to fill in.")
         return
@@ -819,6 +821,26 @@ def _after_merge(plan, bid):
     if kept:
         st.session_state[OPEN] = kept
         st.rerun()  # the whole page: one tile fewer, and the panel reopens on the purchase that was kept
+
+
+def _unit_issue(batch, product, item):
+    """⚠️ The amount's unit doesn't match the product's name (6 rolls saved as 6 ml): one tap measures the group
+    in the right unit and fixes this purchase and the product's pack size."""
+    units, unit = records._float(batch.get("units")), batch.get("unit") or item.get("unit") or "each"
+    issue = productinfo.unit_check(product.get("name"), units, unit)
+    if not issue:
+        return
+    msg, fixed, new_unit = issue
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.caption(f"⚠️ {msg}.")
+        if st.button(f"Fix → {fixed:g} {new_unit}", key=f"ii_unitfix_{batch['batch_id']}", type="primary"):
+            packs = records._float(batch.get("packs")) or 1.0
+            if new_unit != (item.get("unit") or unit):
+                records.change_item_unit(item["item_id"], new_unit, product["product_id"])
+            records.apply_pack_size(product["product_id"], round(fixed / packs, 4), new_unit)
+            records.set_bought(batch["batch_id"], fixed, packs)
+            st.toast(f"Fixed: {fixed:g} {new_unit}")
+            _refresh()
 
 
 def _abv(product, item):

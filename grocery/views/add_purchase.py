@@ -654,6 +654,9 @@ def _card(c, review, known, open_by_item, open_fields):
             badges.append(":violet-badge[last one finished?]")
         if c.get("expiry_date"):
             badges.append(f":orange-badge[exp {c['expiry_date']:%b %d}]")
+        unit_issue = None if c.get("pack_size") else productinfo.unit_check(c.get("product"), c["units"], c["unit"])
+        if unit_issue:
+            badges.append(":orange-badge[unit?]")
         title = f"{c['emoji']} **{c['item'] or 'Unnamed item'}**".strip()
         if c.get("packs") is not None and not c.get("pack_size"):
             amount = f"{c['packs']:g} pack{'s' if c['packs'] != 1 else ''}"
@@ -671,6 +674,8 @@ def _card(c, review, known, open_by_item, open_fields):
                 review["items"].remove(c)
                 st.toast(f"Removed {c['item'] or 'item'}")
                 st.rerun()
+        if unit_issue:
+            _unit_fix(c, unit_issue, known)
 
         with st.expander("Details"):
             st.caption(f"{c['product'] or '—'} · seen as: “{c['receipt_text']}”")
@@ -731,6 +736,24 @@ def _card(c, review, known, open_by_item, open_fields):
 
             if restock:
                 _finished_question(c, existing, open_by_item)
+
+
+def _unit_fix(c, issue, known):
+    """⚠️ A unit that doesn't match the product's name (6 rolls as 6 ml): one tap fixes a new item; a known
+    group's unit is changed in Pantry (📦 → Measured in), since all its products share it."""
+    msg, units, unit = issue
+    existing = known.get(records.norm(c["item"]))
+    if existing and existing.get("unit") and existing["unit"] != unit:
+        st.caption(f"⚠️ {msg}. {existing['name']} is measured in {existing['unit']}: change it in Pantry → 📦 → Measured in.")
+        return
+    with st.container(horizontal=True, vertical_alignment="center"):
+        st.caption(f"⚠️ {msg}.")
+        if st.button(f"Fix → {units:g} {unit}", key=f"it_{c['uid']}_unitfix", type="tertiary"):
+            c["units"], c["unit"] = units, unit
+            c.setdefault("user_set", set()).update({"units", "unit"})
+            for k in ("units", "units_oz", "unit"):  # the card's boxes redraw from the fixed values
+                st.session_state.pop(f"it_{c['uid']}_{k}", None)
+            st.rerun()
 
 
 def _finished_question(c, existing, open_by_item):
