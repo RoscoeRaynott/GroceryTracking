@@ -68,6 +68,8 @@ def _refresh():
 
 
 def _panel(bid):
+    from grocery import costs
+    costs.toast_pending()  # a lookup here redraws only the panel: show what it cost right away
     batch = next((b for b in records.live_batches() if b["batch_id"] == bid), None)
     if not batch:
         return

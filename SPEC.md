@@ -629,7 +629,7 @@ _Status: gathering requirements. No code until the plan is approved._
 ## AI costs (built)
 - Every AI call now logs, besides input/output tokens: **thinking tokens** (billed as output; were never recorded), **search-result tokens** the model read (billed as input), the number of **Google searches** it ran (each billed), and its **cost** (ai_log `thought_tokens`, `tool_tokens`, `searches`, `cost_usd`).
 - Prices are editable in Settings → AI prices (`ai_prices` "model=in/out" per 1M tokens; `price_per_1000_searches`). Defaults match Google's pricing page (checked Nov 2026): 3.8 Flash $0.75/$3.75 until Dec 31, 2026, then $1.50/$7.50 from Jan 1, 2027 (update the setting then); 3.5 Flash-Lite $0.30/$2.50; Google Search grounding: 5,000 free a month, then $14 per 1,000, billed per search query, capped at 1,500 a day. A model with no price uses the dearest one, so costs aren't understated. Google's free monthly searches aren't subtracted.
-- **After each action a 💸 pop-up** says what its AI calls cost, with the number of Google searches and the biggest tasks.
+- **After each action a 💸 pop-up** says what its AI calls cost, with the number of Google searches and the biggest tasks — also for lookups inside the item panel (which redraw only the panel).
 - **Settings → 💸 AI costs:** today / 7 / 30 days / all: total, calls, searches; a bar per kind of task (cost and count); cost per use; cost by day; the last 30 calls. Older rows (before this) lack thinking and searches, so they're marked as low estimates.
 
 ## Alcoholic drinks and ABV (built)
