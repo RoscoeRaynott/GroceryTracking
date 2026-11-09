@@ -115,6 +115,8 @@ def amount_of(units, unit, product):
         return None
     if unit in GRAMS:
         return _amount(units, unit)
+    if unit == "each" and _f(product.get("piece_grams")):  # one piece's weight, given or from USDA, wins
+        return units * _f(product["piece_grams"]), "weight"
     size = _f(product.get("pack_size")) or (1.0 if unit == "each" else 0.0)
     if _f(product.get("pack_grams")) and size and _unit(product.get("pack_unit") or unit) == unit:
         return _f(product["pack_grams"]) * units / size, "weight"

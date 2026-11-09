@@ -449,6 +449,14 @@ def set_pack_weight(product_id, servings_per_pack=None, pack_grams=None, density
         sheets.update_rows("products", "product_id", {product_id: change})
 
 
+def set_weights(product_id, **fields):
+    """Change (or clear, with 0) the numbers nutrition totals use: piece_grams, pack_grams, servings_per_pack,
+    density. Fields given as None are left as they are."""
+    change = {k: (round(v, 3) if v else "") for k, v in fields.items() if v is not None}
+    if change:
+        sheets.update_rows("products", "product_id", {product_id: change})
+
+
 def set_abv(product_id, abv):
     sheets.update_rows("products", "product_id", {product_id: {"abv": abv}})
 

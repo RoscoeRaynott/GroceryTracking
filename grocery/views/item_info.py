@@ -886,10 +886,21 @@ def _pack_weight(product, item):
     if not nutrition.per_serving(product):
         return
     pid = product["product_id"]
+    loose = product.get("packaged") == "no" and (product.get("pack_unit") or item.get("unit") or "each") == "each"
     n, how = nutrition.pack_servings(product, item)
     if n is not None:
         what = "one pack" if records._float(product.get("pack_size")) else f"one {item.get('unit') or 'unit'}"
-        st.caption(f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how}).")
+        piece = records._float(product.get("piece_grams"))
+        text = f"📏 1 piece ≈ {piece:g} g" if loose and piece else f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how})."
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            st.caption(text)
+            with st.popover("", icon=":material/edit:", key=f"ii_wedit_{pid}", help="Change the weight used"):
+                _edit_weights(product, item, loose)
+        return
+    if loose:  # loose fruit / vegetables counted in pieces: one piece's weight is all it needs
+        st.markdown(":orange-badge[📏 weight?] :gray[How much does one piece weigh? Leave it empty if you don't know: "
+                    "it's then left out of nutrition.]")
+        _edit_weights(product, item, loose)
         return
     amount, serving, problem = nutrition.what_is_missing(product, item)
     unit_of = lambda a: f"{a[0]:,.0f} {'ml' if a[1] == 'volume' else 'g'}" if a else "?"
@@ -943,6 +954,36 @@ def _pack_weight(product, item):
         _refresh()
 
 
+def _edit_weights(product, item, loose):
+    """The numbers nutrition totals use, to set, change or clear (0 clears): one piece's weight for loose produce;
+    servings per container, one pack's weight and a liquid's density for packaged food."""
+    pid = product["product_id"]
+    f = records._float
+    if loose:
+        grams = st.number_input("One piece weighs (g)", value=f(product.get("piece_grams")) or None, min_value=0.0,
+                                step=5.0, format="%g", key=_k(f"ii_wpiece_{pid}", product.get("piece_grams")),
+                                placeholder="e.g. 150", help="0 clears it")
+        if st.button("Save", key=f"ii_wsave_{pid}", type="primary"):
+            # the piece weight is the only weight loose produce uses: clear pack numbers an older form may have saved
+            records.set_weights(pid, piece_grams=grams or 0, pack_grams=0, servings_per_pack=0)
+            st.toast("Weight saved" if grams else "Weight cleared")
+            _refresh()
+        return
+    spp = st.number_input("Servings per container (one unit, as on the label)", value=f(product.get("servings_per_pack")) or None,
+                          min_value=0.0, step=1.0, format="%g", key=_k(f"ii_wspp_{pid}", product.get("servings_per_pack")),
+                          help="0 clears it")
+    pack_g = st.number_input("One pack weighs (g)", value=f(product.get("pack_grams")) or None, min_value=0.0, step=10.0,
+                             format="%g", key=_k(f"ii_wpack_{pid}", product.get("pack_grams")),
+                             help="Only needed when the pack size isn't a weight or volume. 0 clears it")
+    density = st.number_input("Density (g/ml), for liquids", value=f(product.get("density")) or None, min_value=0.0,
+                              max_value=5.0, step=0.01, format="%g", key=_k(f"ii_wdens_{pid}", product.get("density")),
+                              help="0 clears it")
+    if st.button("Save", key=f"ii_wsave_{pid}", type="primary"):
+        records.set_weights(pid, servings_per_pack=spp or 0, pack_grams=pack_g or 0, density=density or 0)
+        st.toast("Saved")
+        _refresh()
+
+
 def _typical(product):
     from grocery import usda
     pid = product["product_id"]
@@ -984,6 +1025,7 @@ def _typical(product):
                 except Exception:
                     st.session_state[gkey] = (None, "")
             grams, portion = st.session_state[gkey]
+            grams = records._float(product.get("piece_grams")) or grams  # the weight you set wins over USDA's typical
             grams = st.number_input("1 piece weighs (g)", value=grams, min_value=0.0, step=5.0, format="%g",
                                     key=f"{key}_grams_{pick['fdc_id']}", help=f"USDA: {portion}" if portion else None)
         with st.container(horizontal=True):
