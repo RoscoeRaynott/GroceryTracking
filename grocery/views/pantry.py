@@ -75,6 +75,7 @@ def render():
     st.caption("Tap an item to see everything about it, fix it, mark it finished or say some went bad.")
     st.markdown(TILE_CSS, unsafe_allow_html=True)
     st.html(TAP_JS, unsafe_allow_javascript=True)
+    _PICKS_DRAWN.clear()  # one tick box per product, even when it was bought twice
 
     food = [r for r in shown if r["item"].get("kind", "Food") == "Food"]
     groups = [(f"{place}", [r for r in food if records.storage_of(r["product"], r["item"]) == place]) for place in PLACES]
@@ -98,6 +99,7 @@ def render():
 
 
 OPEN_GROUP = "pantry_group"
+_PICKS_DRAWN = set()  # products whose "Include in Look up all" box is already on the page this run
 LEVEL = {"red": 0, "orange": 1, "ok": 2}
 
 
@@ -258,7 +260,8 @@ def _tile(r, picking):
         if st.button(b["item"], key=f"pi_{bid}", help=b.get("product") or b["item"]):
             item_info.open_panel(bid)
         pid = b.get("product_id")
-        if picking and pid:
+        if picking and pid and pid not in _PICKS_DRAWN:  # the box is per product: on its first tile only
+            _PICKS_DRAWN.add(pid)
             st.session_state.setdefault(f"ni_pick_{pid}", True)
             st.checkbox("Include in Look up all", key=f"ni_pick_{pid}", label_visibility="collapsed")
 
