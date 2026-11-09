@@ -871,22 +871,37 @@ def _pack_weight(product, item):
         what = "one pack" if records._float(product.get("pack_size")) else f"one {item.get('unit') or 'unit'}"
         st.caption(f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how}).")
         return
-    st.markdown(":orange-badge[📏 weight?] :gray[How much does one pack hold? Needed to add up what you ate.]")
+    pack_g, serving_g = nutrition.what_is_missing(product, item)
+    serving_text = product.get("serving_size") or "not given"
+    st.markdown(":orange-badge[📏 weight?] "
+                + (f":green-badge[one pack: {pack_g:,.0f} g ✓]" if pack_g else ":gray-badge[one pack: ?]") + " "
+                + (f":green-badge[one serving: {serving_g:g} g ✓]" if serving_g else f":gray-badge[one serving: “{serving_text}” · weight?]"))
+    st.caption("Needed to add up what you ate. The label's \"servings per container\" is the easiest.")
     with st.container(horizontal=True, vertical_alignment="bottom"):
         servings = st.number_input("Servings in one pack", value=None, min_value=0.0, step=1.0, format="%g",
                                    key=f"ii_spp_{pid}", placeholder="e.g. 12")
-        amount = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
-                                 key=f"ii_pg_{pid}", placeholder="e.g. 400")
-        unit = st.selectbox("Unit", ["g", "oz", "lb", "kg", "ml", "fl oz", "l"], key=f"ii_pgu_{pid}",
-                            label_visibility="collapsed")
+        if pack_g:  # the pack's weight is known: what's missing is one serving's
+            amount = st.number_input("or one serving weighs (g)", value=None, min_value=0.0, step=1.0, format="%g",
+                                     key=f"ii_sg_{pid}", placeholder="e.g. 2")
+            unit = "g"
+        else:
+            amount = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
+                                     key=f"ii_pg_{pid}", placeholder="e.g. 400")
+            unit = st.selectbox("Unit", ["g", "oz", "lb", "kg", "ml", "fl oz", "l"], key=f"ii_pgu_{pid}",
+                                label_visibility="collapsed")
     if st.button("Save", key=f"ii_pgsave_{pid}", type="primary"):
         if not (servings or amount):
             st.warning("Enter the servings or the weight first.")
         else:
-            records.set_pack_weight(pid, servings_per_pack=servings,
-                                    pack_grams=amount * nutrition.GRAMS[unit] if amount else None)
-            if servings and not records._float(product.get("pack_size")):  # servings per pack need a pack
-                records.apply_pack_size(pid, 1.0, product.get("pack_unit") or item.get("unit") or "each")
+            if servings:
+                records.set_pack_weight(pid, servings_per_pack=servings)
+                if not records._float(product.get("pack_size")):  # servings per pack need a pack
+                    records.apply_pack_size(pid, 1.0, product.get("pack_unit") or item.get("unit") or "each")
+            elif pack_g:  # one serving's weight: keep the label's words and add the grams
+                records.sheets.update_rows("products", "product_id", {pid: {
+                    "serving_size": f"{product.get('serving_size') or '1 serving'} ({amount:g}g)"}})
+            else:
+                records.set_pack_weight(pid, pack_grams=amount * nutrition.GRAMS[unit])
             st.toast("Saved: Insights can count this now")
             _refresh()
 

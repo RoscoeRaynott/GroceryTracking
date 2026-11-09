@@ -47,6 +47,30 @@ def per_serving(product):
     return {k: _f(v.get("amount")) for k, v in per.items() if isinstance(v, dict) and v.get("amount") is not None}
 
 
+SPOONS = {"tsp": 4.93, "teaspoon": 4.93, "teaspoons": 4.93, "tbsp": 14.79, "tablespoon": 14.79,
+          "tablespoons": 14.79, "cup": 236.6, "cups": 236.6}
+_SPOON = re.compile(r"(\d+(?:\.\d+)?|\d+\s*/\s*\d+)\s*(tsp|teaspoons?|tbsp|tablespoons?|cups?)\b", re.I)
+VOLUME = {"ml", "l", "fl oz", "qt", "gal"}
+
+
+def _number(text):
+    text = text.replace(" ", "")
+    if "/" in text:
+        a, b = text.split("/", 1)
+        return _f(a) / _f(b) if _f(b) else 0.0
+    return _f(text)
+
+
+def name_grams(product):
+    """One pack's weight/volume printed in its name or pack text ("Shan Biryani Masala 50g", "Sauce, 8 fl oz")."""
+    for text in ((product or {}).get("pack_text"), (product or {}).get("name")):
+        found = [_f(m.group(1)) * GRAMS.get(_unit(m.group(2)), 0) for m in _AMOUNT.finditer(str(text or ""))]
+        found = [g for g in found if g > 0]
+        if found:
+            return found[-1]
+    return None
+
+
 def grams_of(units, unit, product):
     """The weight in grams (or ml) of `units` of this product, or None."""
     product = product or {}
@@ -55,13 +79,27 @@ def grams_of(units, unit, product):
         return None
     if unit in GRAMS:
         return units * GRAMS[unit]
-    size = _f(product.get("pack_size"))
-    pack_grams = _f(product.get("pack_grams"))
+    size = _f(product.get("pack_size")) or (1.0 if unit == "each" else 0.0)
+    pack_grams = _f(product.get("pack_grams")) or (name_grams(product) if unit == "each" and size == 1 else None)
     if pack_grams and size and _unit(product.get("pack_unit") or unit) == unit:
         return pack_grams * units / size
     piece = _f(product.get("piece_grams"))
     if unit == "each" and piece:
         return units * piece
+    return None
+
+
+def serving_amount(product, unit):
+    """Grams (or ml) in one serving: printed in grams/ml, or for a liquid a spoon or cup measure (1 tbsp = 15 ml).
+    Spoons of a powder are not converted (a teaspoon of spice weighs anything from 1 to 3 g)."""
+    text = (product or {}).get("serving_size")
+    sg = serving_grams(text)
+    if sg:
+        return sg
+    liquid = _unit(unit) in VOLUME or _unit((product or {}).get("pack_unit") or "") in VOLUME
+    m = _SPOON.search(str(text or ""))
+    if liquid and m:
+        return _number(m.group(1)) * SPOONS[m.group(2).lower()]
     return None
 
 
@@ -71,7 +109,7 @@ def servings(units, unit, product):
     spp, size = _f(product.get("servings_per_pack")), _f(product.get("pack_size"))
     if spp and size and _unit(product.get("pack_unit") or unit) == _unit(unit) and _f(units):
         return spp * _f(units) / size, "servings per pack on the label"
-    sg = serving_grams(product.get("serving_size"))
+    sg = serving_amount(product, unit)
     grams = grams_of(units, unit, product)
     if sg and grams:
         return grams / sg, f"{grams:,.0f} g ÷ {sg:g} g per serving"
@@ -84,6 +122,14 @@ def pack_servings(product, item):
     size = _f(product.get("pack_size")) or 1.0
     unit = product.get("pack_unit") or (item or {}).get("unit") or "each"
     return servings(size, unit, product)
+
+
+def what_is_missing(product, item):
+    """For the "weight?" question: (one pack's grams or None, one serving's grams or None)."""
+    product = product or {}
+    size = _f(product.get("pack_size")) or 1.0
+    unit = product.get("pack_unit") or (item or {}).get("unit") or "each"
+    return grams_of(size, unit, product), serving_amount(product, unit)
 
 
 def needs_weight(product, item):
