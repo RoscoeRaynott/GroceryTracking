@@ -7,3 +7,4 @@
 - Explain things to the user simply and concisely.
 - **App design is visual first**: colors, badges, charts and icons over text. Keep screens easy for the eyes and intuitive.
 - End every reply with a tiny status tag: **Edited & pushed** when the app's code changed and was pushed, or **No code changes** when it was only planning or answering.
+- **Commit as the user:** before committing, set `git config user.name "RoscoeRaynott"` and `git config user.email "142079066+RoscoeRaynott@users.noreply.github.com"` (GitHub's private address for this account), so commits count on the GitHub contributions graph. Keep the Claude co-author line in commit messages.
