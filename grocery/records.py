@@ -437,9 +437,10 @@ def is_alcohol(product, item):
     return looks_alcoholic((item or {}).get("name"), (product or {}).get("name"), (product or {}).get("brand"))
 
 
-def set_pack_weight(product_id, servings_per_pack=None, pack_grams=None):
-    """How much one pack holds, for nutrition totals: servings in it, or its weight (g) / volume (ml)."""
-    change = {}
+def set_pack_weight(product_id, servings_per_pack=None, pack_grams=None, density=None):
+    """How much one pack holds, for nutrition totals: the label's servings per container (one unit), one pack's
+    weight (g), or a liquid's density (g/ml)."""
+    change = {"density": round(density, 3)} if density else {}
     if servings_per_pack:
         change["servings_per_pack"] = round(servings_per_pack, 2)
     if pack_grams:
@@ -783,6 +784,9 @@ def mark_no_nutrition(product_id):
     sheets.update_rows("products", "product_id", {product_id: {"nutrition_status": NO_NUTRITION}})
 
 
+WEIGHT_CHECK = {"weight": "weight", "serving": "weight", "density": "density", "mismatch": "servings"}
+
+
 def completeness(product, item, batch):
     """[(what, filled?)] for the profile bar: what's known about this purchase's product and item."""
     item, batch = item or {}, batch or {}
@@ -795,16 +799,18 @@ def completeness(product, item, batch):
         checks.append(("expiry", bool(batch.get("expiry_date")) or item.get("no_expiry") == "yes"))
     if product and not packaged and item.get("kind", "Food") == "Food":  # loose food: 📚 typical nutrition
         checks.append(("nutrition", nutrition_done(product)))
-        if nutrition.needs_weight(product, item):  # e.g. counted in pieces but one piece's weight isn't known
-            checks.append(("weight", False))
+        problem = nutrition.needs_weight(product, item)
+        if problem:  # e.g. counted in pieces but one piece's weight isn't known
+            checks.append((WEIGHT_CHECK[problem], False))
     if packaged:
         no_label = product.get("info_status") == "none"
         checks += [("brand", bool(product.get("brand")) or product.get("no_brand") == "yes"),
                    ("pack size", bool(_float(product.get("pack_size"))) or product.get("pack_varies") == "yes")]
         if item.get("kind", "Food") == "Food" and is_alcohol(product, item):  # so Insights can count alcohol
             checks.append(("ABV", bool(_float(product.get("abv")))))
-        if item.get("kind", "Food") == "Food" and nutrition.needs_weight(product, item):  # for nutrition totals
-            checks.append(("weight", False))
+        problem = nutrition.needs_weight(product, item) if item.get("kind", "Food") == "Food" else ""
+        if problem:  # what stops nutrition totals: weight?, density? (a liquid) or servings? (a powder in spoons)
+            checks.append((WEIGHT_CHECK[problem], False))
         if item.get("kind", "Food") == "Food":  # moisturizer, detergent…: no food label to complete
             checks += [
                 ("ingredients", bool(product.get("ingredients")) or no_label),

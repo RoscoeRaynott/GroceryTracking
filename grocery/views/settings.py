@@ -1,7 +1,7 @@
 import streamlit as st
 
 from grocery import gemini, sheets
-from grocery.schema import DEFAULT_SETTINGS, TABS
+from grocery.schema import DEFAULT_SETTINGS
 from grocery.views.common import back_home, go
 
 MODEL_TASKS = {
@@ -24,22 +24,16 @@ NUMBERS = [
 def render():
     back_home()
     st.title("Settings")
-    st.caption("Changes save to your Google Sheet as soon as you make them.")
-    with st.container(horizontal=True):
-        if st.button("💸 AI costs", key="to_costs", type="primary", help="What the AI has cost, by task"):
-            go("costs")
-        if st.button("🧪 Thinking trial", key="to_trial", type="tertiary",
-                     help="Read one receipt with normal and low thinking and compare the items and the cost"):
-            go("trial")
-
+    if st.button("💸 AI costs", key="to_costs", type="primary", help="What the AI has cost, by task"):
+        go("costs")
     _, err = _sheet_status()
     models = _gemini_status()
     if err:
         return
     current = sheets.get_settings()
+    st.caption("Changes save to your Google Sheet as soon as you make them.")
 
-    with st.container(border=True):
-        st.subheader("AI model per task")
+    with st.expander("🤖 AI model per task"):
         for key, label in MODEL_TASKS.items():
             saved = current.get(key) or DEFAULT_SETTINGS[key]
             if models:
@@ -49,15 +43,13 @@ def render():
             else:
                 st.text_input(label, value=saved, key=f"set_{key}", on_change=_save, args=(key,))
 
-    with st.container(border=True):
-        st.subheader("AI prices")
+    with st.expander("💲 AI prices"):
         st.caption("Used to work out costs. Format: model=input/output dollars per 1M tokens; separate models with ;")
         for key, label in (("ai_prices", "Token prices"), ("price_per_1000_searches", "Dollars per 1,000 Google searches")):
             st.text_input(label, value=current.get(key) or DEFAULT_SETTINGS[key], key=f"set_{key}",
                           on_change=_save, args=(key,))
 
-    with st.container(border=True):
-        st.subheader("Formula numbers")
+    with st.expander("🔢 Formula numbers"):
         for key, label, kind, low, step in NUMBERS:
             st.number_input(label, min_value=kind(low), step=kind(step),
                             value=kind(float(current[key])), key=f"set_{key}",
@@ -71,7 +63,6 @@ def _save(key):
 
 
 def _sheet_status():
-    st.subheader("Google Sheet")
     sh, err = sheets.connect()
     if err:
         st.error(f"Not connected. {err}")
@@ -82,12 +73,11 @@ def _sheet_status():
         if st.button("Try again"):
             st.rerun()
         return None, err
-    st.success(f"Connected to **{sh.title}**. Tabs ready: {', '.join(TABS)}.")
+    st.markdown(f":green-badge[✅ Google Sheet: {sh.title}]")
     return sh, None
 
 
 def _gemini_status():
-    st.subheader("Gemini")
     key = gemini.api_key()
     if not key:
         st.error("Missing GEMINI_API_KEY in Streamlit secrets.")
@@ -99,7 +89,7 @@ def _gemini_status():
     except Exception as ex:
         st.error(f"Key found, but listing models failed: {ex}")
         return []
-    st.success(f"Key works. {len(models)} models available.")
+    st.markdown(f":green-badge[✅ Gemini key works · {len(models)} models]")
     return models
 
 

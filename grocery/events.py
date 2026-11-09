@@ -11,7 +11,20 @@ import json
 from grocery import records, sheets, timeutil
 
 LABELS = {"wasted": "wasted", "finished": "finished", "expiry": "expiry set", "deleted": "deleted",
-          "pack_finished": "pack finished"}
+          "pack_finished": "pack finished", "pack_started": "pack started"}
+
+
+def pack_start(batch_id, events=None):
+    """The day the pack being eaten now was started: the latest of the last pack finished and a start date you
+    gave for it ("pack_started"); None while pack 1 is open."""
+    events = all_events() if events is None else events
+    mine = [e for e in events if e.get("batch_id") == batch_id and e.get("undone") != "yes"]
+    ends = [e.get("happened_on") for e in mine if e.get("type") == "pack_finished" and e.get("happened_on")]
+    if not ends:
+        return None
+    last = max(ends)
+    starts = [e.get("happened_on") for e in mine if e.get("type") == "pack_started" and (e.get("happened_on") or "") >= last]
+    return max(starts) if starts else last
 
 
 def packs_of(batch):
@@ -99,6 +112,8 @@ def apply(actions, said, source):
                 event(b, "wasted", wasted_fraction=round(1.0 - wasted, 4), happened_on=day)
             event(b, "finished", wasted_fraction=0, happened_on=day)
             batch_changes.setdefault(bid, {}).update(status="closed", closed_on=day)
+        elif a["type"] == "pack_start":  # the next pack was opened later than the last one was finished
+            event(b, "pack_started", happened_on=day)
         elif a["type"] == "expiry":
             event(b, "expiry", expiry_date=a["expiry_date"], happened_on=timeutil.today_str())
             batch_changes.setdefault(bid, {}).update(expiry_date=a["expiry_date"])
@@ -150,6 +165,8 @@ def describe(e):
         return f"{e['item']}: {fraction_text(_num(e.get('wasted_fraction')))} wasted ({e.get('happened_on')})"
     if kind == "finished":
         return f"{e['item']}: finished {e.get('happened_on')}"
+    if kind == "pack_started":
+        return f"{e['item']}: next pack started {e.get('happened_on')}"
     if kind == "pack_finished":
         n = int(_num(e.get("packs")) or 1)
         return f"{e['item']}: {n} pack{'s' if n != 1 else ''} finished {e.get('happened_on')}"

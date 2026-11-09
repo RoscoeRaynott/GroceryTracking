@@ -685,3 +685,16 @@ _Status: gathering requirements. No code until the plan is approved._
 - **🧾 Ingredients:** watch list (editable; default high fructose corn syrup, palm oil, artificial colors, added sugar, hydrogenated oils, MSG, sodium nitrite) as red/green badges with which foods; the 25 most common ingredients as a share of your finished foods (red = on the watch list, incl. aliases like Red 40 → artificial colors). Lists have no amounts, so this is how often, not how much. Names are tidied once per product by one cheap AI call per visit for new ones (products `ingredients_norm`, reset when the list changes); until then simple word matching is used so counts are never falsely zero.
 - **🗂 Groups:** pick a group (sorted by spend), optionally one product: spent / finished / wasted, how long it lasts (🗓 kept vs 🍽 eating, chart per batch/pack), best place to buy, nutrients from it in the period.
 - Removed from Insights (all in the Pantry panel): nicknames, label photos, merge, change picture, kept in.
+
+## Insights accuracy round (built)
+- **Label info is per manufacturer unit:** "servings per container" × units in the store pack (📦 items in one pack, or "2 x 32 oz" in the name). A name like "2 x 32 oz" means 64 oz for one store pack.
+- **No weight ↔ volume guess:** weight and volume are mixed only with a density you enter (products `density`, g/ml). A liquid whose serving is a weight (or the other way round) shows **density?** in the bar/Needs info and is left out of nutrition until given (e.g. avocado oil ≈ 0.91, honey ≈ 1.42). A powder whose serving is in spoons while its pack is a weight shows **servings?** with "⚠️ Unit mismatch… the label's servings per container solves it". Spoons convert to ml (1 tsp = 4.93 ml) only to compare with a liquid's volume. Loose produce without a piece weight stays **weight?** (left blank).
+- **Pack start dates:** pack 2+ starts the day the previous pack was finished, unless you give it a start date (▶ chip "pack started", or the Finished form's "▶ This pack started on"); a gap is then respected (event `pack_started`). Kept days run from the previous pack's finish; eating days from that pack's start.
+- **Calories and total sugar** (no daily value) show as amounts per day with ▲/▼ vs the previous period of the same length.
+- **Ingredients:** the AI is told to list only what's printed and to leave watch-list entries out when unsure; the fallback word matching uses whole words and skips "sugar snap", "sugar-free", "no added sugar", "unsweetened".
+- **ABV:** never assumed; a drink without one stays ABV? and adds no alcohol (0.6 fl oz = the US standard drink definition).
+- **Settings tidied:** status badges; AI models, AI prices and formula numbers in folded sections; the Thinking trial page (decision made: keep normal thinking), the old label-photo camera and the lookup-lab helper removed.
+
+## To do (later)
+- **Voice update accuracy:** voice updates felt inaccurate; for now the user uses the Pantry panel's Finished / Some went bad. Revisit when the rest of the app is done.
+- **Move off Streamlit** to a phone web app for smoothness (press-and-hold etc.), once features are final.

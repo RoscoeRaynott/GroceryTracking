@@ -46,7 +46,9 @@ def eaten():
                 "product": records.short_name(product, item) if product else item.get("name", ""),
                 "kind": item.get("kind", "Food"), "start": end - dt.timedelta(days=days), "end": end, "days": days,
                 "eaten_units": c["units_eaten"], "unit": unit, "nutrients": totals or {}, "counted": totals is not None,
-                "has_nutrition": has, "waiting": waiting, "price": price, "wasted": c["wasted"],
+                "has_nutrition": has, "waiting": waiting, "price": price,
+                "problem": "" if totals is not None or not has else ("pack size" if waiting else
+                           records.WEIGHT_CHECK.get(nutrition.needs_weight(product, item), "weight")), "wasted": c["wasted"],
                 "wasted_cost": (price or 0) * c["wasted"], "pure_alcohol_floz": alcohol,
                 "ingredients": (product or {}).get("ingredients", ""), "ingredients_norm": (product or {}).get("ingredients_norm", ""),
             })

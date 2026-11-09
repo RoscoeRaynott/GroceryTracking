@@ -528,16 +528,6 @@ def _lookup_in_parts(model, query, unit, store_rule, barcode_rule="", needs=None
     return reply, sources + [s for s in n_src + i_src if s not in sources]
 
 
-def lab_lookup(model, part, query, unit="each", store=""):
-    """One focused trial search: part = "product" | "nutrition" | "ingredients" | "ingredient_items".
-    Returns (reply, sources)."""
-    store_rule = (STORE_RULE.format(store=store, sites=STORE_SITES.get(store, f"{store}'s site")) if store
-                  else GENERAL_RULE)
-    prompt = LAB_PROMPTS[part].format(query=query, store_rule=store_rule, unit=unit, nutrients=NUTRIENT_LIST,
-                                      search_rule=SEARCHES[False])
-    return gemini.search_json(f"lab_{part}", model, prompt)
-
-
 def identify_then_search(model, found, unit="each", store="", needs=None, allow_parts=False):
     """A barcode or a photo of the pack told us exactly what it is: search the web with that exact name for the
     photo, pack size and label info. What a photo of the label read always wins; the barcode is kept."""

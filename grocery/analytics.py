@@ -75,6 +75,7 @@ def finished_batches(item_id, batches=None, all_events=None):
         began = _date(b.get("started_on")) or start  # no start date: counted from the day it was bought
         wastes = sorted(((_date(e.get("happened_on")) or start, _num(e.get("wasted_fraction"))) for e in mine
                          if e.get("type") == "wasted"), key=lambda w: w[0])
+        opened = sorted(_date(e.get("happened_on")) for e in mine if e.get("type") == "pack_started" and _date(e.get("happened_on")))
         kept_from, eat_from = start, max(began, start)
         for k, (end, n) in enumerate(chunks):
             share = n / max(total, sum(c[1] for c in chunks))  # this chunk's part of the whole purchase
@@ -90,6 +91,9 @@ def finished_batches(item_id, batches=None, all_events=None):
                                         f"packs {sum(c[1] for c in chunks[:k]) + 1}-{sum(c[1] for c in chunks[:k + 1])}"
                                         if total > 1 else "")))
             kept_from = eat_from = end
+            if k + 1 < len(chunks):  # the next pack may have been opened later (a start date you gave it)
+                later = [d for d in opened if end <= d <= chunks[k + 1][0]]
+                eat_from = max(later) if later else end
     return sorted(out, key=lambda b: (b["purchased_on"], b["closed_on"]))
 
 

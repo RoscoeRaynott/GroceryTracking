@@ -28,6 +28,7 @@ TABS = {
         "storage",  # where this product is kept; "" = its group's usual place
         "pack_grams",  # weight (g) or volume (ml) of one whole pack, when you gave it (for nutrition totals)
         "ingredients_norm",  # {"items": tidied ingredient names, "watch": watch-list entries it contains}
+        "density",  # g per ml, entered by you, for a liquid whose serving is a weight (or the other way round)
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [

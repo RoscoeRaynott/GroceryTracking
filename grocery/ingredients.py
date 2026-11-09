@@ -18,6 +18,9 @@ colors include Red 40, Yellow 5, Blue 1 and similar; added sugar includes sugar,
 WATCH LIST: {watch}
 PRODUCTS (ref | product | ingredients as printed):
 {products}
+Be careful: only list what is actually printed, never guess. Natural sugars in fruit, milk or vegetables are not
+added sugar; "sugar snap peas" is a vegetable; "no added sugar" means none. If unsure whether a watch-list entry
+applies, leave it out.
 Return only JSON: {{"ref": {{"items": [names], "watch": [watch-list entries it contains]}}, ...}}"""
 
 
@@ -33,6 +36,10 @@ ALIASES = {"artificial colors": ("red 40", "red 3", "yellow 5", "yellow 6", "blu
            "high fructose corn syrup": ("high fructose corn syrup", "hfcs")}
 
 
+NOT_ADDED = ("sugar snap", "sugar-free", "sugar free", "no added sugar", "no sugar added", "without added sugar",
+             "unsweetened")
+
+
 def rough(product):
     """Simple word matching on the printed list, used until (or if) the AI tidying hasn't happened, so the
     counts are never falsely zero: {"items": [...], "watch": [...]}."""
@@ -41,7 +48,9 @@ def rough(product):
              for x in re.split(r",|;", text)]
     items = [x for x in items if x and len(x) < 40]
     low = text.lower()
-    watch = [w for w in watch_list() if any(a in low for a in ALIASES.get(w.lower(), (w.lower(),)))]
+    for phrase in NOT_ADDED:  # "sugar snap peas", "sugar-free", "no added sugar" aren't added sugar
+        low = low.replace(phrase, " ")
+    watch = [w for w in watch_list() if any(re.search(rf"\b{re.escape(a)}\b", low) for a in ALIASES.get(w.lower(), (w.lower(),)))]
     return {"items": items, "watch": watch, "rough": True}
 
 

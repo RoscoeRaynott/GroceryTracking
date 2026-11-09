@@ -72,8 +72,7 @@ def _coverage(recs, p0, p1):
     missing = [r for r in food if not r["counted"]]
     if missing:
         with st.expander("Not counted yet"):
-            st.markdown(" ".join(f":gray-badge[{r['product']}: "
-                                 f"{('pack size?' if r.get('waiting') else 'weight?') if r['has_nutrition'] else 'nutrition?'}]"
+            st.markdown(" ".join(f":gray-badge[{r['product']}: {(r.get('problem') or 'weight') if r['has_nutrition'] else 'nutrition'}?]"
                                  for r in missing))
             st.caption("Open them in Pantry → 📊 Nutrition (or ⚠️ Needs info) to fill these in.")
 
@@ -92,6 +91,16 @@ def _overview(recs, p0, p1, days):
     _coverage(recs, p0, p1)
     food = [r for r in recs if r["kind"] == "Food" and r["counted"]]
     got = consumption.totals(food, p0, p1)
+    before = consumption.totals(food, p0 - dt.timedelta(days=days), p0 - dt.timedelta(days=1))
+    badges = []
+    for key, icon in (("calories", "🔥"), ("total_sugars", "🍬")):  # no daily value, but worth watching over time
+        if key in got:
+            now, then = got[key] / days, before.get(key, 0.0) / days
+            change = (f" · {'▲' if now > then else '▼'} {abs(100 * (now - then) / then):.0f}% vs the {days} days before"
+                      if then else "")
+            badges.append(f":gray-badge[{icon} {now:,.0f} {_unit(key)}/day {_name(key)}{change}]")
+    if badges:
+        st.markdown(" ".join(badges))
     rows = []
     for key in consumption.LIMIT + consumption.GET:
         dv = productinfo.DAILY_VALUES.get(key)

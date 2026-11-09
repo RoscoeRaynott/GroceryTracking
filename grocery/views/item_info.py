@@ -105,10 +105,8 @@ def _panel(bid):
     if batch.get("price_paid"):
         facts.append(f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
     began = analytics._date(batch.get("started_on"))
-    pack_days = [analytics._date(e.get("happened_on")) for e in events.all_events() if e.get("batch_id") == bid
-                 and e.get("type") == "pack_finished" and e.get("undone") != "yes"]
-    if began and any(pack_days):  # the pack being eaten now started when the one before it was finished
-        began = max([began] + [d for d in pack_days if d])
+    if events.pack_start(bid):  # the pack being eaten now started when the one before it was finished (or later)
+        began = analytics._date(events.pack_start(bid))
     facts.append(f":gray-badge[⏱ {days}d since bought]" if began else f":gray-badge[⏱ {days}d open]")
     if events.packs_of(batch) > 1:
         facts.append(f":blue-badge[📦 {events.packs_left(batch)} of {events.packs_of(batch)} packs left]")
@@ -512,11 +510,16 @@ def _finish_form(batch):
     today = timeutil.now().date()
     bought = analytics._date(batch.get("purchased_on")) or today
     began = None
-    if done_before:  # pack 2 onwards starts the day the one before it was finished
+    pack_began = None
+    if done_before:  # pack 2 onwards: the day the one before it was finished, unless you say it was opened later
         last = max((analytics._date(e.get("happened_on")) for e in events.all_events() if e.get("batch_id") == bid
                     and e.get("type") == "pack_finished" and e.get("undone") != "yes"), default=bought) or bought
-        st.caption(f"▶ Started {last:%b %d}, when the pack before it was finished.")
-        earliest = last
+        current = analytics._date(events.pack_start(bid)) or last
+        day = st.date_input("▶ This pack started on", value=current, min_value=last, max_value=max(last, today),
+                            format="MM/DD/YYYY", key=_k(f"pfpstart_{bid}", current),
+                            help="The day the pack before it was finished, unless you opened this one later")
+        pack_began = day if day and day != current else None
+        earliest = day or last
     else:
         saved = analytics._date(batch.get("started_on"))
         day = st.date_input("▶ Started eating on", value=saved or bought, min_value=bought, max_value=max(bought, today),
@@ -527,6 +530,9 @@ def _finish_form(batch):
     end = st.date_input("✓ Finished on", value=today, min_value=earliest, max_value=today, format="MM/DD/YYYY",
                         key=f"pfend_{bid}")
     if st.button("✓ Finished", key=f"pf_{bid}", type="primary"):
+        if pack_began:
+            events.apply([{"type": "pack_start", "batch": batch, "happened_on": pack_began.isoformat()}],
+                         said="Pantry: next pack started", source="pantry")
         _finish(batch, began, packs, end)
 
 
@@ -558,8 +564,21 @@ def _finish(batch, began=None, packs=None, end=None):
 
 
 def _started(batch):
-    """▶ The day you started eating it (the bought date if you never say)."""
+    """▶ The day you started eating it (the bought date if you never say). With packs already finished, it's the
+    start of the pack being eaten now (the day the one before was finished, unless you say later)."""
     bid = batch["batch_id"]
+    if events.packs_finished(bid):
+        current = analytics._date(events.pack_start(bid))
+        with st.popover(f"▶ pack started {current:%b %d}", key=f"ii_pstartpop_{bid}"):
+            st.caption("The pack you're eating now started the day the one before it was finished. Opened it later? Say when.")
+            new = st.date_input("This pack started on", value=current, min_value=current, max_value=max(current, timeutil.now().date()),
+                                format="MM/DD/YYYY", key=_k(f"ii_pstart_{bid}", current))
+            if new and new != current and st.button("Save", key=f"ii_pstartsave_{bid}", type="primary"):
+                events.apply([{"type": "pack_start", "batch": batch, "happened_on": new.isoformat()}],
+                             said="Pantry: next pack started", source="pantry")
+                st.toast(f"This pack started on {new:%b %d}")
+                _refresh()
+        return
     day = analytics._date(batch.get("started_on"))
     with st.popover(f"▶ started {day:%b %d}" if day else "▶ start?", key=f"ii_startpop_{bid}"):
         st.caption("The day you started eating it. Bought ahead? It counts from here, not the bought date.")
@@ -861,7 +880,8 @@ def _nutrition(product):
 
 
 def _pack_weight(product, item):
-    """📏 How much one pack holds, so Insights can add up what you ate: shown when known, asked when not."""
+    """📏 How much one pack holds, so Insights can add up what you ate: shown when known; when not, the exact
+    problem and the one number that solves it."""
     from grocery import nutrition
     if not nutrition.per_serving(product):
         return
@@ -871,39 +891,56 @@ def _pack_weight(product, item):
         what = "one pack" if records._float(product.get("pack_size")) else f"one {item.get('unit') or 'unit'}"
         st.caption(f"📏 {what.capitalize()} ≈ {n:,.1f} servings ({how}).")
         return
-    pack_g, serving_g = nutrition.what_is_missing(product, item)
+    amount, serving, problem = nutrition.what_is_missing(product, item)
+    unit_of = lambda a: f"{a[0]:,.0f} {'ml' if a[1] == 'volume' else 'g'}" if a else "?"
     serving_text = product.get("serving_size") or "not given"
-    st.markdown(":orange-badge[📏 weight?] "
-                + (f":green-badge[one pack: {pack_g:,.0f} g ✓]" if pack_g else ":gray-badge[one pack: ?]") + " "
-                + (f":green-badge[one serving: {serving_g:g} g ✓]" if serving_g else f":gray-badge[one serving: “{serving_text}” · weight?]"))
-    st.caption("Needed to add up what you ate. The label's \"servings per container\" is the easiest.")
-    with st.container(horizontal=True, vertical_alignment="bottom"):
-        servings = st.number_input("Servings in one pack", value=None, min_value=0.0, step=1.0, format="%g",
-                                   key=f"ii_spp_{pid}", placeholder="e.g. 12")
-        if pack_g:  # the pack's weight is known: what's missing is one serving's
-            amount = st.number_input("or one serving weighs (g)", value=None, min_value=0.0, step=1.0, format="%g",
-                                     key=f"ii_sg_{pid}", placeholder="e.g. 2")
-            unit = "g"
-        else:
-            amount = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
-                                     key=f"ii_pg_{pid}", placeholder="e.g. 400")
-            unit = st.selectbox("Unit", ["g", "oz", "lb", "kg", "ml", "fl oz", "l"], key=f"ii_pgu_{pid}",
-                                label_visibility="collapsed")
+    st.markdown((f":green-badge[one pack: {unit_of(amount)} ✓]" if amount else ":gray-badge[one pack: weight?]") + " "
+                + (f":green-badge[one serving: {unit_of(serving)} ✓]" if serving else f":gray-badge[one serving: “{serving_text}”]"))
+    servings = amount_g = density = None
+    if problem == "density":
+        st.markdown(":orange-badge[📏 density?] :gray[The serving is a weight and the bottle a volume (or the other way "
+                    "round). Look up this liquid's density, e.g. avocado oil ≈ 0.91, honey ≈ 1.42 g/ml.]")
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            density = st.number_input("Density (g/ml)", value=None, min_value=0.1, max_value=5.0, step=0.01, format="%g",
+                                      key=f"ii_dens_{pid}", placeholder="e.g. 0.91")
+            servings = st.number_input("or servings per container", value=None, min_value=0.0, step=1.0, format="%g",
+                                       key=f"ii_spp_{pid}", placeholder="e.g. 32")
+    elif problem == "mismatch":
+        st.markdown(":orange-badge[📏 servings?] :gray[⚠️ Unit mismatch: the serving is in spoons (a volume) but the pack "
+                    "is a weight, and a spoon of powder can weigh 1 to 3 g. The label's \"servings per container\" solves it.]")
+        servings = st.number_input("Servings per container (one unit, as on the label)", value=None, min_value=0.0, step=1.0,
+                                   format="%g", key=f"ii_spp_{pid}", placeholder="e.g. 66")
+    else:
+        st.markdown(":orange-badge[📏 weight?] :gray[Needed to add up what you ate. The label's \"servings per "
+                    "container\" is the easiest.]")
+        with st.container(horizontal=True, vertical_alignment="bottom"):
+            servings = st.number_input("Servings per container", value=None, min_value=0.0, step=1.0, format="%g",
+                                       key=f"ii_spp_{pid}", placeholder="e.g. 12")
+            if amount and problem == "serving":
+                amount_g = st.number_input("or one serving weighs (g)", value=None, min_value=0.0, step=1.0, format="%g",
+                                           key=f"ii_sg_{pid}", placeholder="e.g. 2")
+            elif not amount:
+                amount_g = st.number_input("or one pack weighs", value=None, min_value=0.0, step=10.0, format="%g",
+                                           key=f"ii_pg_{pid}", placeholder="e.g. 400")
+                unit = st.selectbox("Unit", ["g", "oz", "lb", "kg"], key=f"ii_pgu_{pid}", label_visibility="collapsed")
+                amount_g = amount_g * nutrition.GRAMS[unit] if amount_g else None
     if st.button("Save", key=f"ii_pgsave_{pid}", type="primary"):
-        if not (servings or amount):
-            st.warning("Enter the servings or the weight first.")
+        if not (servings or amount_g or density):
+            st.warning("Enter one of the numbers first.")
+            return
+        if servings:
+            records.set_pack_weight(pid, servings_per_pack=servings)
+            if not records._float(product.get("pack_size")):  # servings per container need a pack
+                records.apply_pack_size(pid, 1.0, product.get("pack_unit") or item.get("unit") or "each")
+        elif density:
+            records.set_pack_weight(pid, density=density)
+        elif problem == "serving":  # one serving's weight: keep the label's words and add the grams
+            records.sheets.update_rows("products", "product_id", {pid: {
+                "serving_size": f"{product.get('serving_size') or '1 serving'} ({amount_g:g}g)"}})
         else:
-            if servings:
-                records.set_pack_weight(pid, servings_per_pack=servings)
-                if not records._float(product.get("pack_size")):  # servings per pack need a pack
-                    records.apply_pack_size(pid, 1.0, product.get("pack_unit") or item.get("unit") or "each")
-            elif pack_g:  # one serving's weight: keep the label's words and add the grams
-                records.sheets.update_rows("products", "product_id", {pid: {
-                    "serving_size": f"{product.get('serving_size') or '1 serving'} ({amount:g}g)"}})
-            else:
-                records.set_pack_weight(pid, pack_grams=amount * nutrition.GRAMS[unit])
-            st.toast("Saved: Insights can count this now")
-            _refresh()
+            records.set_pack_weight(pid, pack_grams=amount_g)
+        st.toast("Saved: Insights can count this now")
+        _refresh()
 
 
 def _typical(product):
