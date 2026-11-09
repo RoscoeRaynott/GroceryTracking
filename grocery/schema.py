@@ -38,6 +38,7 @@ TABS = {
     "events": [
         "event_id", "change_id", "batch_id", "item", "type", "wasted_fraction", "happened_on",
         "expiry_date", "recorded_at", "source", "said", "previous", "undone",
+        "packs",  # pack_finished: how many packs of a multi-pack purchase were finished
     ],
     "ai_readings": ["reading_id", "purchase_id", "store", "at", "task", "model", "reading"],
     "drafts": ["draft_id", "photo_no", "photo_name", "created_at", "model", "reading"],

@@ -14,7 +14,7 @@ Today is {today} ({weekday}). Dates are relative to today: "3 days ago" = today 
 
 {heard}
 
-OPEN BATCHES (things the user currently has; ref | item | product | store | bought on | quantity | already wasted):
+OPEN BATCHES (things the user currently has; ref | item | product | store | bought on | quantity | packs left | already wasted):
 {batches}
 
 RECENT PURCHASES (ref | item | product | store | quantity | price | bought on):
@@ -35,6 +35,10 @@ Work out every action the user wants. Possible actions:
   went bad, the rest is still good", "200 grams wasted, 500 grams still left"). When they give
   amounts, "fraction" is still the wasted share of the WHOLE batch as bought.
 - "finish": a batch is used up. "rest_wasted": true if they say the remainder was thrown away.
+  A batch bought as several packs ("2 of 3 packs left") can be finished one pack at a time: "packs" = how many
+  packs they finished ("finished one water" = 1); null when they mean all of it.
+- For a batch with several packs left, a "waste" is about the pack being used: "fraction" is the wasted share of
+  ONE pack, and "batch_done" true means that pack is done (not all packs).
 - "expiry": the user says when a batch expires. "expiry_date" as YYYY-MM-DD.
 - "delete": the user wants a batch removed (e.g. "delete the avocados I added yesterday").
 - "add": the user bought something. Use RECENT PURCHASES to fill in product, quantity and price when
@@ -51,7 +55,8 @@ Return only JSON:
   "actions": [
     {{"type": "waste", "batch": ref, "fraction": number, "batch_done": true/false, "happened_on": "YYYY-MM-DD",
       "said": short quote}},
-    {{"type": "finish", "batch": ref, "happened_on": "YYYY-MM-DD", "rest_wasted": true/false, "said": short quote}},
+    {{"type": "finish", "batch": ref, "happened_on": "YYYY-MM-DD", "rest_wasted": true/false, "packs": number or null,
+      "said": short quote}},
     {{"type": "expiry", "batch": ref, "expiry_date": "YYYY-MM-DD", "said": short quote}},
     {{"type": "delete", "batch": ref, "said": short quote}},
     {{"type": "add", "item": generic item name (an existing one if it matches), "is_new": true/false,
@@ -104,7 +109,9 @@ def understand(model, audio=None, text=None, mode="any"):
     batch_refs = {f"b{n}": b for n, b in enumerate(batches, start=1)}
     batch_lines = "\n".join(
         f"{ref} | {b['item']} | {b.get('product', '')} | {b.get('store', '')} | {b.get('purchased_on', '')} | "
-        f"{b.get('units', '')} {b.get('unit', '')} | {events.fraction_text(events.wasted_share(b['batch_id'], all_events))}"
+        f"{b.get('units', '')} {b.get('unit', '')} | "
+        + (f"{events.packs_left(b, all_events)} of {events.packs_of(b)} packs left" if events.packs_of(b) > 1 else "-")
+        + f" | {events.fraction_text(events.wasted_share(b['batch_id'], all_events))}"
         for ref, b in batch_refs.items()
     ) or "(none)"
 

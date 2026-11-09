@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import streamlit as st
 from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
-from grocery import analytics, productinfo, records, sheets
+from grocery import analytics, events, productinfo, records, sheets
 from grocery.views import item_info, voice_update
 from grocery.views.common import back_home
 
@@ -310,11 +310,13 @@ def _tile_html(r):
     pct = round(100 * sum(1 for _, ok in checks if ok) / len(checks)) if checks else 0
     bar_color = COLORS["red" if pct < 40 else "orange" if pct < 80 else "green"][1]
     filled = round(pct / 20)
+    total = events.packs_of(b)  # a multi-pack purchase shows how many packs are left: "2/3"
+    packs = (f'<span style="color:#9AA0A6">{events.packs_left(b)}/{total}</span> ' if total > 1 else "")
     return f"""<div style="display:flex;flex-direction:column;align-items:center;height:104px;justify-content:space-between">
 <div style="height:70px;display:flex;align-items:center;justify-content:center">{picture}</div>
 <div style="font-size:13px;font-weight:600;line-height:18px;padding-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:104px">{html.escape(records.short_name(product, item))}</div>
 <div style="font-size:12px;white-space:nowrap">{ready}<span style="background:{bg};color:{fg};border-radius:6px;padding:1px 6px">{warn}{r["days_open"]}d</span>
-<span style="color:{bar_color};letter-spacing:-1px">{"▰" * filled}{"▱" * (5 - filled)}</span></div></div>"""
+{packs}<span style="color:{bar_color};letter-spacing:-1px">{"▰" * filled}{"▱" * (5 - filled)}</span></div></div>"""
 
 
 def _look_up_all(needs, label="🔎 Look up all"):

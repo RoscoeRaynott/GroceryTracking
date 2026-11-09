@@ -10,7 +10,25 @@ import json
 
 from grocery import records, sheets, timeutil
 
-LABELS = {"wasted": "wasted", "finished": "finished", "expiry": "expiry set", "deleted": "deleted"}
+LABELS = {"wasted": "wasted", "finished": "finished", "expiry": "expiry set", "deleted": "deleted",
+          "pack_finished": "pack finished"}
+
+
+def packs_of(batch):
+    """How many packs as sold (3 crates); 1 when it wasn't bought in whole packs."""
+    p = _num(batch.get("packs"))
+    return int(round(p)) if p >= 2 and abs(p - round(p)) < 1e-9 else 1
+
+
+def packs_finished(batch_id, events=None):
+    """Packs of a multi-pack purchase finished so far (the purchase stays open until the last one)."""
+    events = all_events() if events is None else events
+    return int(sum(_num(e.get("packs")) for e in events
+                   if e.get("batch_id") == batch_id and e.get("type") == "pack_finished" and e.get("undone") != "yes"))
+
+
+def packs_left(batch, events=None):
+    return max(packs_of(batch) - packs_finished(batch["batch_id"], events), 1)
 
 
 def all_events():
@@ -25,7 +43,10 @@ def wasted_share(batch_id, events=None):
 
 
 def apply(actions, said, source):
-    """actions: [{"type": waste|finish|expiry|delete, "batch": batch row, ...}]. Returns change_id."""
+    """actions: [{"type": waste|finish|expiry|delete, "batch": batch row, ...}]. Returns change_id.
+    Multi-pack purchases: "finish" may say "packs" (how many finished; missing = all that are left), and a
+    "waste" with "of_pack": true gives its fraction of the pack being used; "batch_done" then finishes that
+    pack. The purchase closes when its last pack is finished."""
     if not actions:
         return None
     now = timeutil.now_str()
@@ -53,7 +74,20 @@ def apply(actions, said, source):
         day = a.get("happened_on") or timeutil.today_str()
         wasted = wasted_share(bid, events) + sum(
             _num(e.get("wasted_fraction")) for e in new_events if e["batch_id"] == bid and e["type"] == "wasted")
-        if a["type"] == "waste":
+        left = packs_left(b, events) - int(sum(_num(e.get("packs")) for e in new_events
+                                               if e["batch_id"] == bid and e["type"] == "pack_finished"))
+        if a["type"] == "waste" and a.get("of_pack") and packs_of(b) > 1:
+            fraction = max(0.0, min(_num(a.get("fraction")) / packs_of(b), 1.0 - wasted))  # stored as a share of it all
+            event(b, "wasted", wasted_fraction=round(fraction, 4), happened_on=day)
+            if a.get("batch_done", True):
+                if left > 1:
+                    event(b, "pack_finished", packs=1, wasted_fraction=0, happened_on=day)
+                else:
+                    event(b, "finished", wasted_fraction=0, happened_on=day)
+                    batch_changes.setdefault(bid, {}).update(status="closed", closed_on=day)
+        elif a["type"] == "finish" and a.get("packs") and 0 < int(_num(a["packs"])) < left:
+            event(b, "pack_finished", packs=int(_num(a["packs"])), wasted_fraction=0, happened_on=day)
+        elif a["type"] == "waste":
             fraction = max(0.0, min(_num(a.get("fraction")), 1.0 - wasted))
             event(b, "wasted", wasted_fraction=round(fraction, 4), happened_on=day)
             if a.get("batch_done", True) or wasted + fraction >= 0.999:
@@ -81,9 +115,14 @@ def undo(change_id):
     events = [e for e in all_events() if e.get("change_id") == change_id and e.get("undone") != "yes"]
     deleted = {b["batch_id"] for b in sheets.read_tab("batches") if b.get("status") == "deleted"}
     restore = {}
+    # Only a change that changed the purchase itself (finished, deleted, expiry) puts its old state back; undoing
+    # "1 pack finished" or "some went bad, rest still left" must not reopen a purchase finished since.
+    changed = {e["batch_id"] for e in events if e.get("type") in ("finished", "deleted", "expiry")}
     for e in events:
         if e["batch_id"] in deleted and e.get("type") != "deleted":
             continue  # undoing an older change must not bring back a batch you deleted since
+        if e["batch_id"] not in changed:
+            continue
         if e.get("previous"):
             try:
                 restore[e["batch_id"]] = json.loads(e["previous"])
@@ -111,6 +150,9 @@ def describe(e):
         return f"{e['item']}: {fraction_text(_num(e.get('wasted_fraction')))} wasted ({e.get('happened_on')})"
     if kind == "finished":
         return f"{e['item']}: finished {e.get('happened_on')}"
+    if kind == "pack_finished":
+        n = int(_num(e.get("packs")) or 1)
+        return f"{e['item']}: {n} pack{'s' if n != 1 else ''} finished {e.get('happened_on')}"
     if kind == "expiry":
         return f"{e['item']}: expires {e.get('expiry_date')}"
     if kind == "deleted":

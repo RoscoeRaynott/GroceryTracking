@@ -92,7 +92,9 @@ def _preview(k, pending):
     with st.container(horizontal=True):
         if st.button("Approve", key=f"{k}_approve", type="primary", disabled=not (actions or adds)):
             if actions:
-                events.apply([dict(a, type=a["type"]) for a in actions],
+                # several packs left: a waste is out of the pack being used (as the voice AI was told)
+                events.apply([dict(a, type=a["type"], of_pack=a["type"] == "waste" and events.packs_left(a["batch"]) > 1)
+                              for a in actions],
                              said=result.get("transcript", ""), source="voice")
             st.session_state.pop(k, None)
             if adds:
@@ -110,6 +112,14 @@ def _preview(k, pending):
 def _line(a):
     b = a["batch"]
     name = f"**{b['item']}** (bought {b.get('purchased_on', '?')}, {b.get('store', '')})"
+    multi = events.packs_left(b) > 1
+    if a["type"] == "waste" and multi:
+        wasted = events.fraction_text(float(a.get("fraction") or 0))
+        return f"{name}: {wasted} of the open pack wasted on {a.get('happened_on')}" + (
+            " · that pack is done" if a.get("batch_done", True) else " · rest of that pack still left")
+    if a["type"] == "finish" and multi and a.get("packs") and int(a["packs"]) < events.packs_left(b):
+        n = int(a["packs"])
+        return f"{name}: {n} pack{'s' if n != 1 else ''} finished on {a.get('happened_on')} · {events.packs_left(b) - n} left"
     if a["type"] == "waste":
         wasted = events.fraction_text(float(a.get("fraction") or 0))
         if a.get("batch_done", True):

@@ -128,11 +128,12 @@ def _lifespan(summary, item):
         return
     rows = []
     for n, (b, avg) in enumerate(zip(done, summary["running"]), start=1):
-        label = f"{n}. {b['purchased_on'][5:]} {b.get('store', '')[:8]}"
+        label = f"{n}. {b['purchased_on'][5:]} {b.get('store', '')[:8]}" + (f" {b['pack_label']}" if b.get("pack_label") else "")
         rows.append({"batch": label, "n": n, "part": "Eaten", "days": b["days"] * b["eaten_share"]})
         rows.append({"batch": label, "n": n, "part": "Wasted", "days": b["days"] * b["wasted"]})
     bars = pd.DataFrame(rows)
-    line = pd.DataFrame([{"batch": f"{n}. {b['purchased_on'][5:]} {b.get('store', '')[:8]}",
+    line = pd.DataFrame([{"batch": f"{n}. {b['purchased_on'][5:]} {b.get('store', '')[:8]}"
+                                   + (f" {b['pack_label']}" if b.get("pack_label") else ""),
                           "usual": avg * b["units_num"]}
                          for n, (b, avg) in enumerate(zip(done, summary["running"]), start=1) if avg])
     order = list(dict.fromkeys(bars["batch"]))

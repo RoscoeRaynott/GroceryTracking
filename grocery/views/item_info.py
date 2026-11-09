@@ -105,7 +105,13 @@ def _panel(bid):
     if batch.get("price_paid"):
         facts.append(f":green-badge[💲 {float(batch['price_paid']):,.2f}]")
     began = analytics._date(batch.get("started_on"))
+    pack_days = [analytics._date(e.get("happened_on")) for e in events.all_events() if e.get("batch_id") == bid
+                 and e.get("type") == "pack_finished" and e.get("undone") != "yes"]
+    if began and any(pack_days):  # the pack being eaten now started when the one before it was finished
+        began = max([began] + [d for d in pack_days if d])
     facts.append(f":gray-badge[⏱ {days}d since bought]" if began else f":gray-badge[⏱ {days}d open]")
+    if events.packs_of(batch) > 1:
+        facts.append(f":blue-badge[📦 {events.packs_left(batch)} of {events.packs_of(batch)} packs left]")
     if began:
         facts.append(f":violet-badge[🍽 {max(0, (timeutil.now().date() - began).days)}d eating]")
     with st.container(horizontal=True, gap="small", vertical_alignment="center"):
@@ -482,14 +488,21 @@ def _quick_actions(batch, product, item, can_look_up):
     if row and row["reason"]:
         st.markdown(f":{'red' if row['level'] == 'red' else 'orange'}-badge[⚠️ {row['reason']}]")
     with st.container(horizontal=True, gap="small"):
-        if batch.get("started_on"):
+        left = events.packs_left(batch)
+        first_pack = events.packs_finished(bid) == 0
+        if batch.get("started_on") and left == 1:
             if st.button("Finished", key=f"pf_{bid}", icon=":material/check:", type="primary"):
                 _finish(batch)
-        else:  # no start date yet: ask once, with the bought date ready to accept
+        else:  # how many packs (several left) and/or when you started (not known yet): ask once
             with st.popover("Finished", icon=":material/check:", type="primary", key=f"pfpop_{bid}"):
-                began = _start_question(batch, f"pfstart_{bid}")
+                packs = None
+                if left > 1:
+                    choice = st.segmented_control("How many packs finished?", list(range(1, left)) + ["All"], default=1,
+                                                  key=f"pfpacks_{bid}", format_func=lambda n: f"All {left}" if n == "All" else str(n))
+                    packs = None if choice in (None, "All") else int(choice)
+                began = _start_question(batch, f"pfstart_{bid}") if first_pack and not batch.get("started_on") else None
                 if st.button("✓ Finished", key=f"pf_{bid}", type="primary"):
-                    _finish(batch, began)
+                    _finish(batch, began, packs)
         with st.popover("Some went bad", icon=":material/delete:", key=f"pop_{bid}"):
             _went_bad(batch)
         if product and can_look_up:
@@ -508,10 +521,17 @@ def _start_question(batch, key):
     return day if day and day != bought else None
 
 
-def _finish(batch, began=None):
+def _finish(batch, began=None, packs=None):
+    """Finish the purchase, or just `packs` of a multi-pack one (it stays in the Pantry with the rest)."""
     if began:
         records.set_started(batch["batch_id"], began)
-    events.apply([{"type": "finish", "batch": batch}], said="Pantry: Finished", source="pantry")
+    left = events.packs_left(batch)
+    events.apply([{"type": "finish", "batch": batch, "packs": packs}], said="Pantry: Finished"
+                 + (f" {packs} of {left} packs" if packs else ""), source="pantry")
+    if packs and packs < left:
+        st.toast(f"{packs} pack{'s' if packs != 1 else ''} finished · {left - packs} left · Undo in History")
+        _refresh()
+        return
     st.toast(f"{batch['item']} finished · Undo in History")
     _close()
     st.rerun()  # the item leaves the Pantry, so close the panel and redraw the page
@@ -545,8 +565,10 @@ def _went_bad(b):
                              placeholder="e.g. half · 200 grams · one bell pepper · 2 slices, rest is fine")
         if st.button("Check", key=f"pwc_{bid}", type="primary", disabled=not text.strip()):
             with st.spinner("Reading…"):
-                try:
-                    st.session_state[f"pw_{bid}"] = dict(voice.parse_waste(b, text), text=text)
+                try:  # a multi-pack purchase: the amount is out of the pack being used
+                    view = _one_pack(b) if events.packs_of(b) > 1 else b
+                    st.session_state[f"pw_{bid}"] = dict(voice.parse_waste(view, text), text=text,
+                                                         of_pack=events.packs_of(b) > 1)
                 except GeminiError as ex:
                     st.error(f"Couldn't read that: {ex}")
                     return
@@ -555,15 +577,18 @@ def _went_bad(b):
 
     share = events.fraction_text(float(parsed.get("fraction") or 0))
     done = parsed.get("batch_done", True)
-    st.markdown(f":orange-badge[{share} wasted] "
-                + (":gray-badge[rest eaten · closes]" if done else ":green-badge[rest still left]"))
+    of_pack = parsed.get("of_pack")
+    closes = done and (not of_pack or events.packs_left(b) == 1)
+    st.markdown(f":orange-badge[{share} {'of this pack ' if of_pack else ''}wasted] "
+                + (":gray-badge[rest eaten · closes]" if closes else ":gray-badge[this pack done · the rest stay]"
+                   if done else ":green-badge[rest still left]"))
     st.caption(parsed.get("summary", ""))
-    began = _start_question(b, f"pwstart_{bid}") if done and not b.get("started_on") else None
+    began = _start_question(b, f"pwstart_{bid}") if done and not b.get("started_on") and events.packs_finished(bid) == 0 else None
     with st.container(horizontal=True):
         if st.button("Approve", key=f"pwa_{bid}", type="primary"):
             if began:
                 records.set_started(bid, began)
-            events.apply([{"type": "waste", "batch": b, "fraction": parsed.get("fraction"),
+            events.apply([{"type": "waste", "batch": b, "fraction": parsed.get("fraction"), "of_pack": of_pack,
                            "batch_done": done, "happened_on": parsed.get("happened_on")}],
                          said=f"Pantry: {parsed['text']}", source="pantry")
             st.session_state.pop(f"pw_{bid}", None)
@@ -572,6 +597,14 @@ def _went_bad(b):
         if st.button("Cancel", key=f"pwx_{bid}"):
             st.session_state.pop(f"pw_{bid}", None)
             _refresh()
+
+
+def _one_pack(batch):
+    """The purchase as one of its packs (for "some went bad" on a multi-pack purchase)."""
+    n = events.packs_of(batch)
+    units = records._float(batch.get("units"))
+    return dict(batch, units=round(units / n, 4) if units else batch.get("units"), packs=1,
+                product=f"{batch.get('product', '')} (one of {n} packs)")
 
 
 def _days_open(batch):

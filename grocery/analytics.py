@@ -43,23 +43,53 @@ def settings():
 
 
 def finished_batches(item_id, batches=None, all_events=None):
-    """Finished batches of an item, oldest first, each with days / wasted / eaten worked out."""
+    """Finished batches of an item, oldest first, each with days / wasted / eaten worked out.
+
+    A multi-pack purchase gives one entry per finished pack (or per group of packs finished together):
+    pack 1 runs from the day it was bought (eating: from its start date), each next pack from the day the
+    one before it was finished. So 3 crates of water give 3 data points, and their days still add up to
+    the whole purchase. A purchase that's still open already counts the packs finished so far."""
     batches = sheets.read_tab("batches") if batches is None else batches
     all_events = events.all_events() if all_events is None else all_events
     out = []
     for b in batches:
-        if b.get("item_id") != item_id or b.get("status") != "closed":
+        if b.get("item_id") != item_id or b.get("status") not in ("closed", "open"):
             continue
-        start, end = _date(b.get("purchased_on")), _date(b.get("closed_on"))
-        if not (start and end):
+        start = _date(b.get("purchased_on"))
+        if not start:
             continue
-        began = _date(b.get("started_on")) or start  # no start date: counted from the day it was bought
-        wasted = events.wasted_share(b["batch_id"], all_events)
+        mine = [e for e in all_events if e.get("batch_id") == b["batch_id"] and e.get("undone") != "yes"]
+        total = events.packs_of(b)
+        chunks = sorted(((_date(e.get("happened_on")), int(_num(e.get("packs"), 1)) or 1) for e in mine
+                         if e.get("type") == "pack_finished" and _date(e.get("happened_on"))), key=lambda c: c[0])
+        done = sum(n for _, n in chunks)
+        if b.get("status") == "closed":
+            end = _date(b.get("closed_on"))
+            if not end:
+                continue
+            chunks.append((end, max(total - done, 0) or 1))
+        if not chunks:
+            continue
         units = _num(b.get("units"), 1.0) or 1.0
-        out.append(dict(b, days=max(1, (end - start).days), eat_days=max(1, (end - max(began, start)).days),
-                        started=bool(_date(b.get("started_on"))), wasted=wasted,
-                        eaten_share=1 - wasted, units_num=units, units_eaten=units * (1 - wasted),
-                        price=_num(b.get("price_paid"), None)))
+        price = _num(b.get("price_paid"), None)
+        began = _date(b.get("started_on")) or start  # no start date: counted from the day it was bought
+        wastes = sorted(((_date(e.get("happened_on")) or start, _num(e.get("wasted_fraction"))) for e in mine
+                         if e.get("type") == "wasted"), key=lambda w: w[0])
+        kept_from, eat_from = start, max(began, start)
+        for k, (end, n) in enumerate(chunks):
+            share = n / max(total, sum(c[1] for c in chunks))  # this chunk's part of the whole purchase
+            last = k == len(chunks) - 1
+            # waste recorded while this chunk was open (stored as a share of the whole purchase)
+            w = sum(f for day, f in wastes if (k == 0 or day > kept_from) and (last or day <= end))
+            wasted = min(w / share, 1.0) if share else 0.0
+            out.append(dict(b, closed_on=end.isoformat(), days=max(1, (end - kept_from).days),
+                            eat_days=max(1, (end - eat_from).days), started=bool(_date(b.get("started_on"))) and k == 0,
+                            wasted=wasted, eaten_share=1 - wasted, units_num=units * share,
+                            units_eaten=units * share * (1 - wasted), price=price * share if price is not None else None,
+                            pack_label=(f"pack {sum(c[1] for c in chunks[:k]) + 1}" if total > 1 and n == 1 else
+                                        f"packs {sum(c[1] for c in chunks[:k]) + 1}-{sum(c[1] for c in chunks[:k + 1])}"
+                                        if total > 1 else "")))
+            kept_from = eat_from = end
     return sorted(out, key=lambda b: (b["purchased_on"], b["closed_on"]))
 
 
