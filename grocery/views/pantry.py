@@ -120,22 +120,15 @@ def _gid(members):
 
 def _group_tile(members, lookable):
     """A group of several purchases (3 sausages): one tile showing the group, ×3 and its most urgent days.
-    Tap: its items open right under it. Long-press: they pop up; slide to one and let go to open it."""
+    Tap: its items open right under it."""
     gid = _gid(members)
     is_open = st.session_state.get(OPEN_GROUP) == gid
     with st.container(border=True, width=112, gap=None, key=f"grp_{gid}"):
         st.markdown(_group_html(members, is_open), unsafe_allow_html=True)
         if st.button(members[0]["item"].get("name") or members[0]["batch"]["item"], key=f"gb_{gid}",
-                     help="Tap to see what's in this group; press and hold to pick one"):
+                     help="Tap to see what's in this group"):
             st.session_state[OPEN_GROUP] = None if is_open else gid
             st.rerun()
-        # Hidden: one button per purchase, which the long-press menu "taps" for you.
-        with st.container(key=f"gh_{gid}"):
-            for r in members:
-                b = r["batch"]
-                if st.button(f"{records.short_name(r['product'], r['item'])} · {r['days_open']}d",
-                             key=f"pj_{b['batch_id']}"):
-                    item_info.open_panel(b["batch_id"])
     # Its items, on their own row right under the group. Always drawn but hidden, so the phone can show them
     # instantly when the group is tapped (no trip to the server); "grpshown" = opened by the server instead.
     with st.container(horizontal=True, gap="small", key=f"{'grpshown' if is_open else 'grpopen'}_{gid}"):
@@ -178,18 +171,12 @@ TILE_CSS = """<style>
 [class*="st-key-gb_"] { position: absolute !important; inset: 0 !important; width: auto !important; z-index: 5; margin: 0; }
 [class*="st-key-gb_"] > div, [class*="st-key-gb_"] button { width: 100% !important; height: 100% !important; }
 [class*="st-key-gb_"] button { opacity: 0; touch-action: manipulation; }
-[class*="st-key-gh_"] { display: none !important; }
 /* An open group: its items on their own row, on a soft band */
 [data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]),
 [data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpshown_"]) { flex: 0 0 100% !important; width: 100% !important; max-width: 100% !important; }
 [data-testid="stLayoutWrapper"]:has(> [class*="st-key-grpopen_"]):not(.gt-open) { display: none !important; }
 [class*="st-key-grpopen_"], [class*="st-key-grpshown_"] { width: 100% !important; background: rgba(255,75,75,.08);
   border-radius: 10px; padding: 6px; }
-/* The long-press menu */
-#gt-menu { position: fixed; z-index: 100000; background: #262730; color: #FAFAFA; border-radius: 12px; padding: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.45); min-width: 200px; max-width: 80vw; font: 15px sans-serif; }
-#gt-menu div { padding: 12px 14px; border-radius: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#gt-menu div.on { background: #FF4B4B; color: white; }
 /* Instant feedback: the tile presses in the moment it's touched */
 [class*="st-key-tile_"]:active, [class*="st-key-tile_"]:has(button:active),
 [class*="st-key-grp_"]:active, [class*="st-key-grp_"]:has(button:active) { transform: scale(.94); background: rgba(255,75,75,.18); }
@@ -213,7 +200,7 @@ TILE_CSS = """<style>
 #   can't close the panel it just opened.
 TAP_JS = """<script>
 (() => {
-  const VERSION = 3;  // bump when this script changes, so an open page picks up the new one without a reload
+  const VERSION = 4;  // bump when this script changes, so an open page picks up the new one without a reload
   if (window.__gtTapsVersion === VERSION) return; window.__gtTapsVersion = VERSION;
   if (window.__gtTapsStop) window.__gtTapsStop();  // switch off an older copy of this script
   const listeners = [];
@@ -245,55 +232,7 @@ TAP_JS = """<script>
     if (tile) tile.classList.add('gt-pressed');
   }, true);
 
-  // Long-press a group: its items pop up; slide your thumb to one and let go to open it.
-  let timer = null, menu = null, startX = 0, startY = 0, swallowClick = false;
-  const gidOf = el => { const m = (el.className.match(/st-key-grp_(\\S+)/) || [])[1]; return m; };
-  const close = () => { if (menu) menu.remove(); menu = null; };
-  const rowAt = (x, y) => { const el = doc.elementFromPoint(x, y); return el && el.closest && el.closest('#gt-menu div'); };
-  const open = (tile, x, y) => {
-    const gid = gidOf(tile); if (!gid) return;
-    const buttons = [...doc.querySelectorAll(`.st-key-gh_${gid} button`)];
-    if (!buttons.length) return;
-    tile.classList.remove('gt-pressed');
-    menu = doc.createElement('div'); menu.id = 'gt-menu';
-    buttons.forEach(b => { const row = doc.createElement('div'); row.textContent = b.innerText; row._button = b; menu.appendChild(row); });
-    doc.body.appendChild(menu);
-    const h = menu.offsetHeight, w = menu.offsetWidth, vw = doc.documentElement.clientWidth;
-    menu.style.left = Math.max(8, Math.min(vw - w - 8, x - w / 2)) + 'px';
-    menu.style.top = (y - h - 24 > 8 ? y - h - 24 : y + 24) + 'px';
-    if (navigator.vibrate) navigator.vibrate(15);
-  };
-  on('touchstart', e => {
-    const tile = e.target.closest && e.target.closest('[class*="st-key-grp_"]');
-    if (!tile || e.touches.length > 1) return;
-    startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-    clearTimeout(timer);
-    timer = setTimeout(() => { open(tile, startX, startY); }, 450);
-  }, { capture: true, passive: true });
-  on('touchmove', e => {
-    const t = e.touches[0];
-    if (!menu) {  // moving before the long-press: it's a scroll
-      if (Math.hypot(t.clientX - startX, t.clientY - startY) > 10) clearTimeout(timer);
-      return;
-    }
-    e.preventDefault();
-    const row = rowAt(t.clientX, t.clientY);
-    menu.querySelectorAll('div').forEach(d => d.classList.toggle('on', d === row));
-  }, { capture: true, passive: false });
-  on('touchend', e => {
-    clearTimeout(timer);
-    if (!menu) return;
-    e.preventDefault(); e.stopPropagation();
-    const t = e.changedTouches[0];
-    const row = rowAt(t.clientX, t.clientY);
-    close();
-    doc.querySelectorAll('.gt-pressed').forEach(x => x.classList.remove('gt-pressed'));
-    if (row && row._button) row._button.click();  // "tap" that item's hidden button
-    swallowClick = true;  // then ignore the tap the phone may still send to the group tile
-    setTimeout(() => { swallowClick = false; }, 400);
-  }, { capture: true, passive: false });
   on('click', e => {
-    if (swallowClick) { e.stopPropagation(); e.preventDefault(); return; }
     // Tapping a group opens / closes its items right here on the phone: instant, no trip to the server.
     const btn = e.target.closest && e.target.closest('[class*="st-key-gb_"]');
     const gid = btn && (btn.className.match(/st-key-gb_(\\S+)/) || [])[1];
@@ -305,7 +244,6 @@ TAP_JS = """<script>
     if (opening) openGroups.add(gid); else openGroups.delete(gid);
     doc.querySelectorAll('.gt-pressed').forEach(x => x.classList.remove('gt-pressed'));
   }, true);
-  on('contextmenu', e => { if (e.target.closest && e.target.closest('[class*="st-key-grp_"]')) e.preventDefault(); }, true);
 })();
 </script>"""
 COLORS = {"green": ("#21C35433", "#3DD56D"), "orange": ("#FFA42133", "#FFBD45"), "red": ("#FF4B4B33", "#FF6C6C")}
