@@ -298,6 +298,8 @@ def save_product_info(product_id, info, barcode=""):
     changes.update(_brand_if_missing(product_id, info))
     if barcode:
         changes["barcode"] = barcode
+    if changes.get("ingredients"):
+        changes["ingredients_norm"] = ""  # tidied again for Insights
     sheets.update_rows("products", "product_id", {product_id: changes})
 
 
@@ -597,7 +599,7 @@ def set_group(product_id, group_name):
 
 def save_ingredients(product_id, ingredients, source="Said by you"):
     sheets.update_rows("products", "product_id", {product_id: {
-        "ingredients": ingredients, "info_status": "confirmed", "info_source": source}})
+        "ingredients": ingredients, "info_status": "confirmed", "info_source": source, "ingredients_norm": ""}})
 
 
 LABEL_COLS = ("serving_size", "servings_per_pack", "ingredients", "nutrients_json", "abv")
@@ -624,6 +626,8 @@ def fill_from_lookup(product_id, info, use_photo=True, use_pack=False, new_name=
     change.update(_brand_if_missing(product_id, info))
     if product.get("lookup_missed_on"):
         change["lookup_missed_on"] = ""  # found after all
+    if change.get("ingredients"):
+        change["ingredients_norm"] = ""  # a new ingredients list is tidied again for Insights
     if change.get("ingredients") or change.get("nutrients_json"):
         change.update(info_status="confirmed", info_source=info.get("source", "Web search"), info_url=info.get("url", ""))
     elif info.get("url") and not product.get("info_url"):

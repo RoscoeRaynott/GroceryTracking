@@ -19,7 +19,7 @@ TASKS = {
     "lookup_nutrition": "🔎 Web lookup (in parts)", "lookup_ingredient_items": "🔎 Web lookup (in parts)",
     "picture_search": "🖼 Picture search", "label_read": "📷 Label / front photo",
     "receipt_read": "🧾 Receipt photo", "receipt_items": "🧾 Receipt → items",
-    "group_suggest": "🗂 Group suggestions", "voice": "🎤 Voice", "voice_refine": "🎤 Voice fix",
+    "group_suggest": "🗂 Group suggestions", "ingredients_tidy": "🧾 Ingredient names", "voice": "🎤 Voice", "voice_refine": "🎤 Voice fix",
     "waste_text": "🗑 Went bad", "nickname": "🏷 Nickname", "ingredients_said": "🎤 Ingredients said",
 }
 

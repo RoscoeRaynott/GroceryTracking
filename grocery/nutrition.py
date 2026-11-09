@@ -139,8 +139,28 @@ def needs_weight(product, item):
     return pack_servings(product, item)[0] is None
 
 
-def nutrients_in(units, unit, product):
-    """{nutrient: total amount} in `units` of this product, or None if the weight isn't known."""
+def pack_amount_servings(packs, product):
+    """Servings in `packs` whole packs of a product whose pack size isn't set (the purchase was saved as packs
+    waiting for a size): from the label's servings per pack, else the pack's weight from what you entered or its
+    name ("Heinz Ketchup 32 oz") ÷ one serving. None when there's no way to tell."""
+    product = product or {}
+    spp = _f(product.get("servings_per_pack"))
+    if spp:
+        return spp * _f(packs)
+    pg = _f(product.get("pack_grams")) or name_grams(product)
+    sg = serving_amount(product, product.get("pack_unit") or "")
+    if not sg and pg:  # a liquid's spoon measure needs to know it's a liquid: the name's unit tells
+        m = _AMOUNT.search(str(product.get("name") or ""))
+        sg = serving_amount(product, _unit(m.group(2))) if m else None
+    return _f(packs) * pg / sg if pg and sg else None
+
+
+def nutrients_in(units, unit, product, waiting=False):
+    """{nutrient: total amount} in `units` of this product, or None if the amount isn't known.
+    waiting=True: `units` are whole packs whose size isn't known yet."""
+    if waiting:
+        n = pack_amount_servings(units, product)
+        return None if n is None else {k: v * n for k, v in per_serving(product).items()}
     n, _ = servings(units, unit, product)
     if n is None:
         return None

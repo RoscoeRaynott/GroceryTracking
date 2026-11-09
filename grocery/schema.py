@@ -27,6 +27,7 @@ TABS = {
         "group_status",  # "ok": you confirmed its group
         "storage",  # where this product is kept; "" = its group's usual place
         "pack_grams",  # weight (g) or volume (ml) of one whole pack, when you gave it (for nutrition totals)
+        "ingredients_norm",  # {"items": tidied ingredient names, "watch": watch-list entries it contains}
     ],
     # One row per thing bought. Rows from the same receipt share a purchase_id.
     "batches": [
@@ -69,6 +70,7 @@ DEFAULT_SETTINGS = {
     # check Google's pricing page and edit in Settings.
     "ai_prices": "gemini-3.8-flash=0.75/3.75; gemini-3.5-flash-lite=0.30/2.50",
     "price_per_1000_searches": "14",
+    "watch_list": "high fructose corn syrup, palm oil, artificial colors, added sugar, hydrogenated oils, MSG, sodium nitrite",
 }
 
 KINDS = ["Food", "Household", "One-time"]
