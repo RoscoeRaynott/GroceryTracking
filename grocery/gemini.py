@@ -187,6 +187,9 @@ def _generate(task, model, prompt, media, search, thinking=None):
                 raise GeminiError(f"Gemini {model} returned HTTP {ex.code}: {detail}") from ex
             except urllib.error.URLError as ex:
                 raise GeminiError(f"Could not reach Gemini: {ex.reason}") from ex
+            except TimeoutError as ex:  # Google may still have done (and billed) the work
+                error = "timeout"
+                raise GeminiError("Gemini took too long to answer (timed out).") from ex
         usage = data.get("usageMetadata", {})
         candidate = (data.get("candidates") or [{}])[0]
         text = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])
@@ -225,11 +228,17 @@ def _parse_json(text):
 def _log(task, model, usage, seconds, ok, searches=0, error=""):
     """Every call goes to the ai_log tab with its tokens, searches and cost, and into the next cost pop-up."""
     from grocery import costs
+    estimated = not ok and not usage  # failed before Google said what it used (e.g. timed out): it may still bill
     try:
-        dollars = costs.cost(model, usage, searches)
+        if estimated:
+            dollars, searches = costs.estimate(task, model)
+        else:
+            dollars = costs.cost(model, usage, searches)
     except Exception:
         dollars = 0.0
-    costs.note(task, dollars, searches)
+    costs.note(task, dollars, searches, estimated)
+    if estimated:
+        error = f"{error or 'failed'} (cost estimated)"
     try:
         sheets.append_rows("ai_log", [{
             "at": timeutil.now_str(),

@@ -60,11 +60,27 @@ def cost(model, usage, searches=0):
     return tokens_in / 1e6 * rate[0] + tokens_out / 1e6 * rate[1] + searches * per_search
 
 
-def note(task, dollars, searches):
+def estimate(task, model):
+    """(dollars, searches) for a call that failed before Google reported its usage: the typical cost of this kind
+    of call from your log (median of the last 20 that worked), else a cautious guess. Google may bill such calls."""
+    rows = [r for r in sheets.read_tab("ai_log") if r.get("task") == task and r.get("cost_usd") not in ("", None)
+            and str(r.get("ok")).lower() in ("true", "yes", "1")][-20:]
+    if rows:
+        def mid(values):
+            values = sorted(values)
+            return values[len(values) // 2]
+        f = lambda v: float(v or 0)
+        return mid([f(r["cost_usd"]) for r in rows]), int(mid([f(r.get("searches")) for r in rows]))
+    searched = task in ("product_web_lookup", "picture_search") or str(task).startswith(("lookup_", "lab_"))
+    usage = {"promptTokenCount": 3000, "candidatesTokenCount": 1000, "thoughtsTokenCount": 3000}
+    return cost(model, usage, 2 if searched else 0), 2 if searched else 0
+
+
+def note(task, dollars, searches, estimated=False):
     """Remember this call for the next cost pop-up (works from the parallel lookups too)."""
     try:
         with _LOCK:
-            st.session_state.setdefault(SPEND, []).append((task_name(task), dollars, searches))
+            st.session_state.setdefault(SPEND, []).append((task_name(task) + (" ≈" if estimated else ""), dollars, searches))
     except Exception:
         pass  # no session (e.g. a test or a background job): nothing to show
 
@@ -79,10 +95,12 @@ def toast_pending():
     if not spent:
         return
     total = sum(d for _, d, _ in spent)
+    rough = any(name.endswith(" ≈") for name, _, _ in spent)
     searches = sum(s for _, _, s in spent)
     by = {}
     for name, d, _ in spent:
         by[name] = by.get(name, 0) + d
     parts = " · ".join(f"{name} ${d:.3f}" for name, d in sorted(by.items(), key=lambda x: -x[1])[:3])
-    st.toast(f"💸 AI cost ${total:.3f}" + (f" ({searches} Google search{'es' if searches != 1 else ''})" if searches else "")
-             + f"  \n{parts}", icon="💸", duration=15)  # long enough to read on a phone (✕ closes it sooner)
+    st.toast(f"💸 AI cost {'≈' if rough else ''}${total:.3f}" + (f" ({searches} Google search{'es' if searches != 1 else ''})" if searches else "")
+             + f"  \n{parts}" + ("  \n≈ estimated: a call failed before Google said what it used" if rough else ""),
+             icon="💸", duration=15)  # long enough to read on a phone (✕ closes it sooner)

@@ -26,12 +26,12 @@ def _rows():
             continue
         usage = {"promptTokenCount": _f(r.get("input_tokens")), "candidatesTokenCount": _f(r.get("output_tokens")),
                  "thoughtsTokenCount": _f(r.get("thought_tokens")), "toolUsePromptTokenCount": _f(r.get("tool_tokens"))}
-        logged = r.get("cost_usd") not in ("", None)
+        logged = r.get("cost_usd") not in ("", None) and "estimated" not in str(r.get("error", ""))
         out.append({"at": at, "task": costs.task_name(r.get("task", "")), "model": r.get("model", ""),
                     "blocked": "RECITATION" in str(r.get("error", "")),
                     "searches": int(_f(r.get("searches"))),
                     "thinking": int(usage["thoughtsTokenCount"]),
-                    "cost": _f(r["cost_usd"]) if logged else costs.cost(r.get("model", ""), usage),
+                    "cost": _f(r["cost_usd"]) if r.get("cost_usd") not in ("", None) else costs.cost(r.get("model", ""), usage),
                     "full": logged})  # older rows lack thinking and searches, so their cost is a low estimate
     return out
 
@@ -61,7 +61,8 @@ def render():
     c4.metric("🚧 Blocked", f"{int(df['blocked'].sum())}", help="Lookups Google blocked for copying label text; "
               "each can be fetched in 3 parts from its panel (≈4× a lookup)")
     if not df["full"].all():
-        st.caption("⚠️ Calls logged before this page existed miss thinking and searches: their cost is a low estimate.")
+        st.caption("⚠️ Some costs are estimates: calls logged before this page existed (they miss thinking and searches), "
+                   "and calls that failed or timed out before Google reported what they used.")
 
     by = (df.groupby("task").agg(cost=("cost", "sum"), calls=("cost", "size"), searches=("searches", "sum"))
           .reset_index().sort_values("cost", ascending=False))
